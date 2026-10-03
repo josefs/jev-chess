@@ -26,6 +26,8 @@
 #   {promotion}   ", promotes to queen"
 #   {castling}    ", castles kingside" / ", castles queenside"
 #   {gives_check} ", gives check" / ", delivers checkmate" / ", stalemates (draw)"
+#   {mate}        ", delivers checkmate" / ", stalemates (draw)" (like
+#                 {gives_check} but silent on ordinary checks)
 #   {details}     {capture}{promotion}{castling}{gives_check}
 #   {repetition}  ", repeats an earlier position" / ", repeats the position a
 #                 third time (draw by repetition)"

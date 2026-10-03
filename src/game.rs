@@ -168,6 +168,11 @@ impl Game {
             Some(_) => ", repeats an earlier position",
             None => "",
         };
+        let mate = if after.is_checkmate() || after.is_stalemate() {
+            gives_check
+        } else {
+            ""
+        };
         let details = format!("{capture}{promotion}{castling}{gives_check}");
 
         // shakmaty encodes castling as king-takes-rook; use the king's real destination.
@@ -241,6 +246,7 @@ impl Game {
             ("promotion", promotion),
             ("castling", castling.to_string()),
             ("gives_check", gives_check.to_string()),
+            ("mate", mate.to_string()),
             ("safety", safety),
             ("hanging", hanging),
             ("attacks", attacks),
@@ -413,6 +419,19 @@ mod tests {
         assert_eq!(v["capture"], ", captures pawn");
         assert_eq!(v["material"], ", material after: White ahead by 1");
         assert_eq!(v["details"], ", captures pawn");
+    }
+
+    #[test]
+    fn mate_flags_only_mate_and_stalemate() {
+        let fen = "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1";
+        assert_eq!(vars(fen, "a1a8")["mate"], ", delivers checkmate");
+        assert_eq!(vars(fen, "a1a7")["mate"], "");
+        let fen = "7k/8/6K1/5Q2/8/8/8/8 w - - 0 1";
+        assert_eq!(vars(fen, "f5f7")["mate"], ", stalemates (draw)");
+        assert_eq!(vars(fen, "f5c8")["mate"], ", delivers checkmate");
+        let check = vars(fen, "f5f6");
+        assert_eq!(check["gives_check"], ", gives check");
+        assert_eq!(check["mate"], "");
     }
 
     #[test]

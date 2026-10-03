@@ -22,6 +22,7 @@ pub const OPTION_VARS: &[&str] = &[
     "promotion",
     "castling",
     "gives_check",
+    "mate",
     "safety",
     "hanging",
     "attacks",

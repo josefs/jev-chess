@@ -80,7 +80,7 @@ documents the available placeholders:
 - `option` (one per legal move):
   - naming the move: `{uci}`, `{san}`, `{san_plain}` (no `x`), `{piece}`,
     `{from}`, `{to}`
-  - move facts: `{capture}`, `{promotion}`, `{castling}`, `{gives_check}`, or
+  - move facts: `{capture}`, `{promotion}`, `{castling}`, `{gives_check}`, `{mate}` (only checkmate/stalemate), or
     all four as `{details}`; `{repetition}` (the move returns to an earlier
     position)
   - static one-ply analysis: `{safety}` (can the moved piece be captured?),
@@ -103,6 +103,7 @@ Example variants in `prompts/`:
 | `safety-capture-rep.toml` | safety-capture plus `{repetition}` |
 | `draw-instr.toml` | safety-capture-rep, instructions say draws are bad unless behind |
 | `draw-instr-balance.toml` | draw-instr plus `{balance}` in the state |
+| `draw-instr-balance-mate.toml` | draw-instr-balance plus `{mate}` |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.
