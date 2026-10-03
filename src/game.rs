@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, anyhow};
 use shakmaty::{
-    CastlingMode, Chess, Color, EnPassantMode, Move, Position, Role, Square,
+    CastlingMode, CastlingSide, Chess, Color, EnPassantMode, Move, Position, Role, Square,
     fen::Fen,
     san::{San, SanPlus},
     uci::UciMove,
@@ -84,15 +84,21 @@ impl Game {
         let mut after = self.pos.clone();
         after.play_unchecked(*m);
 
-        let mut desc = format!("{san}: {} {}", role_name(m.role()), move_path(m));
+        let mut desc = format!(
+            "{san}: {} {}",
+            role_name(m.role()),
+            move_path(m, self.pos.turn())
+        );
         if let Some(captured) = m.capture() {
             desc.push_str(&format!(", captures {}", role_name(captured)));
         }
         if let Some(promo) = m.promotion() {
             desc.push_str(&format!(", promotes to {}", role_name(promo)));
         }
-        if m.is_castle() {
-            desc.push_str(", castles");
+        match m.castling_side() {
+            Some(CastlingSide::KingSide) => desc.push_str(", castles kingside"),
+            Some(CastlingSide::QueenSide) => desc.push_str(", castles queenside"),
+            None => {}
         }
         if after.is_checkmate() {
             desc.push_str(", delivers checkmate");
@@ -166,9 +172,11 @@ impl Game {
     }
 }
 
-fn move_path(m: &Move) -> String {
+fn move_path(m: &Move, turn: Color) -> String {
+    // shakmaty encodes castling as king-takes-rook; describe the king's real destination.
+    let to = m.castling_side().map_or(m.to(), |side| side.king_to(turn));
     match m.from() {
-        Some(from) => format!("from {from} to {}", m.to()),
+        Some(from) => format!("from {from} to {to}"),
         None => format!("dropped on {}", m.to()),
     }
 }
@@ -213,6 +221,14 @@ mod tests {
         let g =
             Game::from_uci_position("fen r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1 moves e1g1").unwrap();
         assert_eq!(g.history_san, ["O-O"]);
+    }
+
+    #[test]
+    fn castling_description_uses_king_destination() {
+        let g = Game::from_uci_position("fen r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1").unwrap();
+        let opts = g.options(&g.legal_moves());
+        assert_eq!(opts["e8g8"], "O-O: king from e8 to g8, castles kingside");
+        assert_eq!(opts["e8c8"], "O-O-O: king from e8 to c8, castles queenside");
     }
 
     #[test]
