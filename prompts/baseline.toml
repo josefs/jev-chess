@@ -48,6 +48,18 @@
 #   {material}    ", material after: even" / ", material after: White ahead by 3"
 #                 (pawn 1, knight/bishop 3, rook 5, queen 9)
 
+# Optional [labels] table: rewords the fixed labels used by the placeholders
+# above. Write the text without the leading ", "; an empty string hides the
+# label. State placeholders such as {side} and {opponent} can be used.
+# Defaults:
+#   [labels]
+#   check           = "gives check"
+#   checkmate       = "delivers checkmate"
+#   stalemate       = "stalemates (draw)"
+#   repetition      = "repeats an earlier position"
+#   repetition_draw = "repeats the position a third time (draw by repetition)"
+#   threat          = "allows checkmate in one"
+
 state = """
 You are a strong chess engine playing {side}. It is {side}'s turn to move.
 

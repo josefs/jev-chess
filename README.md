@@ -89,6 +89,8 @@ documents the available placeholders:
     piece attacks), `{material}` (balance after the move)
 
 Move facts and analysis are empty or start with `, `, so they can be chained.
+The wording of the fixed labels (check, checkmate, stalemate, repetition,
+threat) can be changed in an optional `[labels]` table; see `baseline.toml`.
 Example variants in `prompts/`:
 
 | File | Options |
@@ -109,6 +111,7 @@ Example variants in `prompts/`:
 | `mate-threat.toml` | draw-instr-balance-mate plus `{threat}` |
 | `mate-exchange.toml` | draw-instr-balance-mate plus `{exchange}` |
 | `mate-threat-exchange.toml` | draw-instr-balance-mate plus both |
+| `threat-blunder.toml`, `threat-loses.toml`, `threat-opponent-wins.toml` | mate-threat-exchange with the threat label reworded |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.

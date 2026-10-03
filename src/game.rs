@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::prompt::{Prompt, Vars};
+use crate::prompt::{Labels, Prompt, Vars};
 use shakmaty::{
     Board, CastlingMode, CastlingSide, Chess, Color, EnPassantMode, Move, Position, Role, Square,
     attacks,
@@ -136,7 +136,8 @@ impl Game {
     }
 
     /// Placeholder values describing one legal move, for `option`.
-    pub fn move_vars(&self, m: &Move) -> Vars {
+    /// `labels` must already be rendered (see `Labels::render`).
+    pub fn move_vars(&self, m: &Move, labels: &Labels) -> Vars {
         let san = San::from_move(&self.pos, *m).to_string();
         let mut after = self.pos.clone();
         after.play_unchecked(*m);
@@ -155,17 +156,17 @@ impl Game {
             None => "",
         };
         let gives_check = if after.is_checkmate() {
-            ", delivers checkmate"
+            labels.checkmate.as_str()
         } else if after.is_check() {
-            ", gives check"
+            labels.check.as_str()
         } else if after.is_stalemate() {
-            ", stalemates (draw)"
+            labels.stalemate.as_str()
         } else {
             ""
         };
         let repetition = match self.seen.get(&repetition_key(&after)).copied() {
-            Some(n) if n >= 2 => ", repeats the position a third time (draw by repetition)",
-            Some(_) => ", repeats an earlier position",
+            Some(n) if n >= 2 => labels.repetition_draw.as_str(),
+            Some(_) => labels.repetition.as_str(),
             None => "",
         };
         let mate = if after.is_checkmate() || after.is_stalemate() {
@@ -185,7 +186,7 @@ impl Game {
                 next.play_unchecked(*reply);
                 next.is_checkmate()
             }) {
-            ", allows checkmate in one"
+            labels.threat.as_str()
         } else {
             ""
         };
@@ -283,9 +284,10 @@ impl Game {
 
     /// Options for Jev: UCI move -> description rendered with `prompt`.
     pub fn options(&self, moves: &[Move], prompt: &Prompt) -> BTreeMap<String, String> {
+        let labels = prompt.labels.render(&self.state_vars());
         moves
             .iter()
-            .map(|m| (Self::to_uci(m), prompt.option(&self.move_vars(m))))
+            .map(|m| (Self::to_uci(m), prompt.option(&self.move_vars(m, &labels))))
             .collect()
     }
 
@@ -446,7 +448,7 @@ mod tests {
     fn vars(fen: &str, uci: &str) -> Vars {
         let g = Game::from_uci_position(&format!("fen {fen}")).unwrap();
         let m = uci.parse::<UciMove>().unwrap().to_move(&g.pos).unwrap();
-        g.move_vars(&m)
+        g.move_vars(&m, &Labels::default().render(&g.state_vars()))
     }
 
     #[test]
@@ -556,12 +558,17 @@ mod tests {
             .into_iter()
             .find(|m| Game::to_uci(m) == "f6g8");
         assert_eq!(
-            g.move_vars(&back.unwrap())["repetition"],
+            g.move_vars(&back.unwrap(), &Labels::default().render(&g.state_vars()))["repetition"],
             ", repeats an earlier position"
         );
         let g =
             Game::from_uci_position("startpos moves g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1").unwrap();
-        let vars: Vec<_> = g.legal_moves().iter().map(|m| g.move_vars(m)).collect();
+        let labels = Labels::default().render(&g.state_vars());
+        let vars: Vec<_> = g
+            .legal_moves()
+            .iter()
+            .map(|m| g.move_vars(m, &labels))
+            .collect();
         let third = vars.iter().find(|v| v["uci"] == "f6g8").unwrap();
         assert_eq!(
             third["repetition"],

@@ -40,6 +40,59 @@ pub struct Prompt {
     pub state: String,
     pub instructions: String,
     pub option: String,
+    #[serde(default)]
+    pub labels: Labels,
+}
+
+/// Wording of the fixed move labels. Each is shown as ", <text>" in its
+/// placeholder; an empty text suppresses the label. May use state placeholders
+/// such as {side} and {opponent}.
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields, default)]
+pub struct Labels {
+    pub check: String,
+    pub checkmate: String,
+    pub stalemate: String,
+    pub repetition: String,
+    pub repetition_draw: String,
+    pub threat: String,
+}
+
+impl Default for Labels {
+    fn default() -> Self {
+        Self {
+            check: "gives check".into(),
+            checkmate: "delivers checkmate".into(),
+            stalemate: "stalemates (draw)".into(),
+            repetition: "repeats an earlier position".into(),
+            repetition_draw: "repeats the position a third time (draw by repetition)".into(),
+            threat: "allows checkmate in one".into(),
+        }
+    }
+}
+
+impl Labels {
+    fn fields_mut(&mut self) -> [(&'static str, &mut String); 6] {
+        [
+            ("check", &mut self.check),
+            ("checkmate", &mut self.checkmate),
+            ("stalemate", &mut self.stalemate),
+            ("repetition", &mut self.repetition),
+            ("repetition_draw", &mut self.repetition_draw),
+            ("threat", &mut self.threat),
+        ]
+    }
+
+    /// Renders state placeholders and adds the ", " separator.
+    pub fn render(&self, vars: &Vars) -> Labels {
+        let mut out = self.clone();
+        for (_, text) in out.fields_mut() {
+            if !text.is_empty() {
+                *text = format!(", {}", render(text, vars));
+            }
+        }
+        out
+    }
 }
 
 impl Prompt {
@@ -58,6 +111,10 @@ impl Prompt {
         check_placeholders("state", &p.state, STATE_VARS)?;
         check_placeholders("instructions", &p.instructions, STATE_VARS)?;
         check_placeholders("option", &p.option, OPTION_VARS)?;
+        let mut labels = p.labels.clone();
+        for (name, text) in labels.fields_mut() {
+            check_placeholders(&format!("labels.{name}"), text, STATE_VARS)?;
+        }
         Ok(p)
     }
 
@@ -103,6 +160,29 @@ fn check_placeholders(field: &str, template: &str, allowed: &[&str]) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn labels_override_and_render() {
+        let p = Prompt::parse(
+            "state = \"s\"\ninstructions = \"i\"\noption = \"{uci}{threat}\"\n\
+             [labels]\nthreat = \"blunder: lets {opponent} win\"\ncheck = \"\"\n",
+        )
+        .unwrap();
+        let vars = Vars::from([("opponent", "Black".to_string())]);
+        let labels = p.labels.render(&vars);
+        assert_eq!(labels.threat, ", blunder: lets Black win");
+        assert_eq!(labels.check, "");
+        assert_eq!(labels.checkmate, ", delivers checkmate");
+        assert_eq!(Prompt::baseline().labels, Labels::default());
+        assert!(
+            Prompt::parse("state=\"\"\ninstructions=\"\"\noption=\"\"\n[labels]\nthreat=\"{uci}\"")
+                .is_err()
+        );
+        assert!(
+            Prompt::parse("state=\"\"\ninstructions=\"\"\noption=\"\"\n[labels]\nbogus=\"x\"")
+                .is_err()
+        );
+    }
 
     #[test]
     fn baseline_parses() {
