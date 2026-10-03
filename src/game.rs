@@ -6,7 +6,8 @@ use anyhow::{Context, Result, anyhow};
 
 use crate::prompt::{Prompt, Vars};
 use shakmaty::{
-    CastlingMode, CastlingSide, Chess, Color, EnPassantMode, Move, Position, Role, Square,
+    Board, CastlingMode, CastlingSide, Chess, Color, EnPassantMode, Move, Position, Role, Square,
+    attacks,
     fen::Fen,
     san::{San, SanPlus},
     uci::UciMove,
@@ -120,37 +121,105 @@ impl Game {
         let mut after = self.pos.clone();
         after.play_unchecked(*m);
 
-        let mut details = String::new();
-        if let Some(captured) = m.capture() {
-            details.push_str(&format!(", captures {}", role_name(captured)));
-        }
-        if let Some(promo) = m.promotion() {
-            details.push_str(&format!(", promotes to {}", role_name(promo)));
-        }
-        match m.castling_side() {
-            Some(CastlingSide::KingSide) => details.push_str(", castles kingside"),
-            Some(CastlingSide::QueenSide) => details.push_str(", castles queenside"),
-            None => {}
-        }
-        if after.is_checkmate() {
-            details.push_str(", delivers checkmate");
+        let us = self.pos.turn();
+
+        let capture = m
+            .capture()
+            .map_or(String::new(), |r| format!(", captures {}", role_name(r)));
+        let promotion = m
+            .promotion()
+            .map_or(String::new(), |r| format!(", promotes to {}", role_name(r)));
+        let castling = match m.castling_side() {
+            Some(CastlingSide::KingSide) => ", castles kingside",
+            Some(CastlingSide::QueenSide) => ", castles queenside",
+            None => "",
+        };
+        let gives_check = if after.is_checkmate() {
+            ", delivers checkmate"
         } else if after.is_check() {
-            details.push_str(", gives check");
+            ", gives check"
         } else if after.is_stalemate() {
-            details.push_str(", stalemates (draw)");
-        }
+            ", stalemates (draw)"
+        } else {
+            ""
+        };
+        let details = format!("{capture}{promotion}{castling}{gives_check}");
 
         // shakmaty encodes castling as king-takes-rook; use the king's real destination.
-        let to = m
-            .castling_side()
-            .map_or(m.to(), |side| side.king_to(self.pos.turn()));
+        let to = m.castling_side().map_or(m.to(), |side| side.king_to(us));
+        let board = after.board();
+
+        let safety = match board.role_at(to) {
+            Some(role) if role != Role::King => match exposure(board, to, us) {
+                Some(Exposure {
+                    attacker,
+                    defended: false,
+                }) => format!(
+                    ", the {} on {to} is undefended and can be captured by a {}",
+                    role_name(role),
+                    role_name(attacker)
+                ),
+                Some(Exposure { attacker, .. }) => format!(
+                    ", the {} on {to} can be captured by a {}",
+                    role_name(role),
+                    role_name(attacker)
+                ),
+                None => String::new(),
+            },
+            _ => String::new(),
+        };
+
+        let hanging: Vec<String> = (board.by_color(us) & !board.kings())
+            .into_iter()
+            .filter(|&sq| sq != to && exposure(board, sq, us).is_some())
+            .map(|sq| format!("{} on {sq}", role_name(board.role_at(sq).unwrap())))
+            .collect();
+        let hanging = if hanging.is_empty() {
+            String::new()
+        } else {
+            format!(", leaves {} exposed to capture", join_and(&hanging))
+        };
+
+        let attacks = match board.piece_at(to) {
+            Some(piece) => {
+                let targets: Vec<String> = (attacks::attacks(to, piece, board.occupied())
+                    & board.by_color(!us)
+                    & !board.kings())
+                .into_iter()
+                .map(|sq| format!("{} on {sq}", role_name(board.role_at(sq).unwrap())))
+                .collect();
+                if targets.is_empty() {
+                    String::new()
+                } else {
+                    format!(", attacks {}", join_and(&targets))
+                }
+            }
+            None => String::new(),
+        };
+
+        let balance = material(board, Color::White) - material(board, Color::Black);
+        let material = match balance {
+            0 => ", material after: even".to_string(),
+            b if b > 0 => format!(", material after: White ahead by {b}"),
+            b => format!(", material after: Black ahead by {}", -b),
+        };
+
         Vars::from([
             ("uci", Self::to_uci(m)),
-            ("san", san),
+            ("san", san.clone()),
+            ("san_plain", san.replace('x', "")),
             ("piece", role_name(m.role()).to_string()),
             ("from", m.from().map_or(String::new(), |sq| sq.to_string())),
             ("to", to.to_string()),
             ("details", details),
+            ("capture", capture),
+            ("promotion", promotion),
+            ("castling", castling.to_string()),
+            ("gives_check", gives_check.to_string()),
+            ("safety", safety),
+            ("hanging", hanging),
+            ("attacks", attacks),
+            ("material", material),
         ])
     }
 
@@ -183,6 +252,54 @@ fn color_name(c: Color) -> &'static str {
     match c {
         Color::White => "White",
         Color::Black => "Black",
+    }
+}
+
+struct Exposure {
+    /// Cheapest enemy piece that can capture on the square.
+    attacker: Role,
+    defended: bool,
+}
+
+/// Whether `owner`'s piece on `sq` can be won: it is attacked and either
+/// undefended or attacked by a cheaper piece. A static one-ply check that
+/// ignores pins and x-rays.
+fn exposure(board: &Board, sq: Square, owner: Color) -> Option<Exposure> {
+    let occupied = board.occupied();
+    let defended = board.attacks_to(sq, owner, occupied).any();
+    let attacker = board
+        .attacks_to(sq, !owner, occupied)
+        .into_iter()
+        .filter_map(|a| board.role_at(a))
+        .filter(|&r| !(defended && r == Role::King))
+        .min_by_key(|&r| value(r))?;
+    let target = board.role_at(sq)?;
+    (!defended || value(attacker) < value(target)).then_some(Exposure { attacker, defended })
+}
+
+fn value(r: Role) -> i32 {
+    match r {
+        Role::Pawn => 1,
+        Role::Knight | Role::Bishop => 3,
+        Role::Rook => 5,
+        Role::Queen => 9,
+        Role::King => 100,
+    }
+}
+
+fn material(board: &Board, color: Color) -> i32 {
+    (board.by_color(color) & !board.kings())
+        .into_iter()
+        .filter_map(|sq| board.role_at(sq))
+        .map(value)
+        .sum()
+}
+
+fn join_and(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [init @ .., last] => format!("{} and {last}", init.join(", ")),
     }
 }
 
@@ -233,6 +350,43 @@ mod tests {
     #[test]
     fn rejects_illegal_move() {
         assert!(Game::from_uci_position("startpos moves e2e5").is_err());
+    }
+
+    fn vars(fen: &str, uci: &str) -> Vars {
+        let g = Game::from_uci_position(&format!("fen {fen}")).unwrap();
+        let m = uci.parse::<UciMove>().unwrap().to_move(&g.pos).unwrap();
+        g.move_vars(&m)
+    }
+
+    #[test]
+    fn safety_flags_piece_moving_into_attack() {
+        let v = vars("4k3/8/8/5p2/8/8/8/3QK3 w - - 0 1", "d1g4");
+        assert_eq!(
+            v["safety"],
+            ", the queen on g4 is undefended and can be captured by a pawn"
+        );
+        let v = vars("4k3/8/8/5p2/8/8/8/3QK3 w - - 0 1", "d1f3");
+        assert_eq!(v["safety"], "");
+        assert_eq!(v["attacks"], ", attacks pawn on f5");
+    }
+
+    #[test]
+    fn hanging_lists_other_exposed_pieces() {
+        let v = vars("4k3/8/8/8/8/2n5/8/1R2K3 w - - 0 1", "e1f1");
+        assert_eq!(v["hanging"], ", leaves rook on b1 exposed to capture");
+        let v = vars("4k3/8/8/8/8/2n5/8/1R2K3 w - - 0 1", "b1b8");
+        assert_eq!(v["hanging"], "");
+        assert_eq!(v["gives_check"], ", gives check");
+    }
+
+    #[test]
+    fn material_and_plain_san() {
+        let v = vars("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1", "e4d5");
+        assert_eq!(v["san"], "exd5");
+        assert_eq!(v["san_plain"], "ed5");
+        assert_eq!(v["capture"], ", captures pawn");
+        assert_eq!(v["material"], ", material after: White ahead by 1");
+        assert_eq!(v["details"], ", captures pawn");
     }
 
     #[test]

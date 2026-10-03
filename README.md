@@ -35,7 +35,7 @@ Additional flags:
 
 - `--random` plays uniformly random legal moves without calling Jev (a
   reference opponent for tournaments).
-- `--show-prompt [FEN|startpos]` prints the rendered state, instructions and
+- `--show-prompt [FEN|startpos [moves ...]]` prints the rendered state, instructions and
   options for a position and exits; handy when writing prompt variants.
 
 Flags are convenient for GUIs such as BanksiaGUI that launch the engine with
@@ -76,8 +76,25 @@ documents the available placeholders:
 
 - `state`, `instructions`: `{side}`, `{opponent}`, `{fen}`, `{board}`,
   `{moves}`, `{history}`, `{check}`
-- `option` (one per legal move): `{uci}`, `{san}`, `{piece}`, `{from}`,
-  `{to}`, `{details}`
+- `option` (one per legal move):
+  - naming the move: `{uci}`, `{san}`, `{san_plain}` (no `x`), `{piece}`,
+    `{from}`, `{to}`
+  - move facts: `{capture}`, `{promotion}`, `{castling}`, `{gives_check}`, or
+    all four as `{details}`
+  - static one-ply analysis: `{safety}` (can the moved piece be captured?),
+    `{hanging}` (other pieces left exposed), `{attacks}` (enemy pieces the moved
+    piece attacks), `{material}` (balance after the move)
+
+Move facts and analysis are empty or start with `, `, so they can be chained.
+Example variants in `prompts/`:
+
+| File | Options |
+| --- | --- |
+| `baseline.toml` | SAN, squares, captures/checks (the default) |
+| `bare.toml` | move name and squares only, no consequences |
+| `uci-only.toml` | just the UCI move |
+| `safety-only.toml` | bare plus `{safety}` and `{hanging}` warnings |
+| `annotated.toml` | baseline plus all analysis placeholders |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.

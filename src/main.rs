@@ -163,7 +163,12 @@ fn load_prompt(args: &Args) -> anyhow::Result<Prompt> {
 /// Prints the request that would be sent to Jev for `position`.
 fn show_prompt(args: &Args, position: &str) -> ExitCode {
     let result = load_prompt(args).and_then(|prompt| {
-        let game = Game::from_uci_position(position)?;
+        let position = position.trim();
+        let game = if position.starts_with("startpos") || position.starts_with("fen") {
+            Game::from_uci_position(position)?
+        } else {
+            Game::from_uci_position(&format!("fen {position}"))?
+        };
         let vars = game.state_vars();
         println!("=== state\n{}", prompt.state(&vars));
         println!("=== instructions\n{}", prompt.instructions(&vars));

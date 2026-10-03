@@ -10,7 +10,23 @@ const BASELINE: &str = include_str!("../prompts/baseline.toml");
 pub const STATE_VARS: &[&str] = &[
     "side", "opponent", "fen", "board", "moves", "history", "check",
 ];
-pub const OPTION_VARS: &[&str] = &["uci", "san", "piece", "from", "to", "details"];
+pub const OPTION_VARS: &[&str] = &[
+    "uci",
+    "san",
+    "san_plain",
+    "piece",
+    "from",
+    "to",
+    "details",
+    "capture",
+    "promotion",
+    "castling",
+    "gives_check",
+    "safety",
+    "hanging",
+    "attacks",
+    "material",
+];
 
 pub type Vars = BTreeMap<&'static str, String>;
 
