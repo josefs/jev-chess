@@ -25,6 +25,8 @@
 #   {castling}    ", castles kingside" / ", castles queenside"
 #   {gives_check} ", gives check" / ", delivers checkmate" / ", stalemates (draw)"
 #   {details}     {capture}{promotion}{castling}{gives_check}
+#   {repetition}  ", repeats an earlier position" / ", repeats the position a
+#                 third time (draw by repetition)"
 #
 # Static analysis of the position after the move (one ply, ignores pins/x-rays).
 # A piece counts as exposed when it is attacked and either undefended or

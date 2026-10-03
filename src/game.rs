@@ -1,6 +1,6 @@
 //! Game state tracking and prompt construction, backed by `shakmaty`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -17,16 +17,13 @@ pub struct Game {
     pos: Chess,
     history_san: Vec<String>,
     start_fen: String,
+    /// How often each position (FEN without move counters) has occurred.
+    seen: HashMap<String, u32>,
 }
 
 impl Default for Game {
     fn default() -> Self {
-        let pos = Chess::default();
-        Self {
-            start_fen: fen_of(&pos),
-            pos,
-            history_san: Vec::new(),
-        }
+        Self::new(Chess::default())
     }
 }
 
@@ -34,7 +31,22 @@ fn fen_of(pos: &Chess) -> String {
     Fen::from_position(pos, EnPassantMode::Legal).to_string()
 }
 
+/// Identifies a position for repetition purposes: FEN without the move counters.
+fn repetition_key(pos: &Chess) -> String {
+    let fen = fen_of(pos);
+    fen.rsplitn(3, ' ').last().unwrap_or(&fen).to_string()
+}
+
 impl Game {
+    fn new(pos: Chess) -> Self {
+        Self {
+            start_fen: fen_of(&pos),
+            seen: HashMap::from([(repetition_key(&pos), 1)]),
+            pos,
+            history_san: Vec::new(),
+        }
+    }
+
     /// Parses the arguments of a UCI `position` command.
     pub fn from_uci_position(args: &str) -> Result<Self> {
         let (setup, moves) = match args.split_once("moves") {
@@ -49,11 +61,7 @@ impl Game {
             let pos: Chess = fen
                 .into_position(CastlingMode::Standard)
                 .map_err(|e| anyhow!("{e}"))?;
-            Self {
-                start_fen: fen_of(&pos),
-                pos,
-                history_san: Vec::new(),
-            }
+            Self::new(pos)
         } else {
             return Err(anyhow!("expected 'startpos' or 'fen'"));
         };
@@ -71,6 +79,7 @@ impl Game {
     fn play(&mut self, m: Move) {
         let san = SanPlus::from_move_and_play_unchecked(&mut self.pos, m);
         self.history_san.push(san.to_string());
+        *self.seen.entry(repetition_key(&self.pos)).or_default() += 1;
     }
 
     pub fn legal_moves(&self) -> Vec<Move> {
@@ -142,6 +151,11 @@ impl Game {
             ", stalemates (draw)"
         } else {
             ""
+        };
+        let repetition = match self.seen.get(&repetition_key(&after)).copied() {
+            Some(n) if n >= 2 => ", repeats the position a third time (draw by repetition)",
+            Some(_) => ", repeats an earlier position",
+            None => "",
         };
         let details = format!("{capture}{promotion}{castling}{gives_check}");
 
@@ -220,6 +234,7 @@ impl Game {
             ("hanging", hanging),
             ("attacks", attacks),
             ("material", material),
+            ("repetition", repetition.to_string()),
         ])
     }
 
@@ -387,6 +402,32 @@ mod tests {
         assert_eq!(v["capture"], ", captures pawn");
         assert_eq!(v["material"], ", material after: White ahead by 1");
         assert_eq!(v["details"], ", captures pawn");
+    }
+
+    #[test]
+    fn repetition_is_flagged() {
+        let g = Game::from_uci_position("startpos moves g1f3 g8f6 f3g1").unwrap();
+        let back = g
+            .legal_moves()
+            .into_iter()
+            .find(|m| Game::to_uci(m) == "f6g8");
+        assert_eq!(
+            g.move_vars(&back.unwrap())["repetition"],
+            ", repeats an earlier position"
+        );
+        let g =
+            Game::from_uci_position("startpos moves g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1").unwrap();
+        let vars: Vec<_> = g.legal_moves().iter().map(|m| g.move_vars(m)).collect();
+        let third = vars.iter().find(|v| v["uci"] == "f6g8").unwrap();
+        assert_eq!(
+            third["repetition"],
+            ", repeats the position a third time (draw by repetition)"
+        );
+        assert!(
+            vars.iter()
+                .filter(|v| v["uci"] != "f6g8")
+                .all(|v| v["repetition"].is_empty())
+        );
     }
 
     #[test]

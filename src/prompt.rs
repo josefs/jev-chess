@@ -26,6 +26,7 @@ pub const OPTION_VARS: &[&str] = &[
     "hanging",
     "attacks",
     "material",
+    "repetition",
 ];
 
 pub type Vars = BTreeMap<&'static str, String>;

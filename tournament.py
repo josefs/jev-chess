@@ -8,6 +8,7 @@ Every pair of engines plays each opening twice, once with each colour.
 Examples:
     ./tournament.py prompts/baseline.toml --random
     ./tournament.py prompts/a.toml prompts/b.toml prompts/c.toml --rounds 20
+    ./tournament.py prompts/a.toml prompts/a.toml@0.5 prompts/b.toml --temperature 0.3
 
 The Jev API key is taken from JEV_API_KEY (or --api-key) and passed to the
 engines through the environment, so it never appears in logs or PGNs.
@@ -93,7 +94,9 @@ def main():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("prompts", nargs="*", type=Path, help="prompt files; one engine each")
+    p.add_argument("prompts", nargs="*",
+                   help="prompt files; one engine each. Append @T to set that engine's "
+                        "temperature, e.g. prompts/bare.toml@0.5")
     p.add_argument("--random", action="store_true",
                    help="add an engine that plays random legal moves, as a reference")
     p.add_argument("--rounds", type=int, default=10,
@@ -106,6 +109,9 @@ def main():
     p.add_argument("--openings", type=Path, default=ROOT / "openings.epd", help="EPD opening book")
     p.add_argument("--seed", type=int, help="seed for opening order (default: random)")
     p.add_argument("--out", type=Path, help="results directory (default results/<timestamp>)")
+    p.add_argument("--temperature", type=float, default=0.0,
+                   help="sampling temperature for engines without @T (default 0: always "
+                        "play Jev's top move)")
     p.add_argument("--api-key", help="Jev API key (default: $JEV_API_KEY)")
     p.add_argument("--model", help="Jev model for all engines")
     p.add_argument("--api-url", help="Jev endpoint for all engines")
@@ -114,17 +120,29 @@ def main():
     args = p.parse_args()
 
     engines = []  # (name, engine args)
-    for prompt in args.prompts:
+    prompts = []
+    for spec in args.prompts:
+        path, at, temp = spec.rpartition("@") if "@" in spec else (spec, "", "")
+        prompt = Path(path)
         if not prompt.is_file():
             die(f"{prompt} is not a file")
-        engines.append((prompt.stem, ["--prompt", str(prompt.resolve())]))
+        try:
+            temperature = float(temp) if at else args.temperature
+        except ValueError:
+            die(f"invalid temperature in {spec}")
+        if temperature < 0:
+            die(f"temperature must be non-negative: {spec}")
+        name = prompt.stem + (f"@{temp}" if at else "")
+        prompts.append(prompt)
+        engines.append((name, ["--prompt", str(prompt.resolve()),
+                               "--temperature", str(temperature)]))
     if args.random:
         engines.append(("random", ["--random"]))
     names = [n for n, _ in engines]
     if len(engines) < 2:
         die("need at least two engines (give two prompt files, or one plus --random)")
     if len(set(names)) != len(names):
-        die(f"engine names must be unique (they come from the file names): {names}")
+        die(f"engine names must be unique (they come from the file names and @T): {names}")
 
     env = dict(os.environ)
     if args.api_key:
@@ -134,11 +152,12 @@ def main():
             env[var] = flag
     env.pop("JEV_CHESS_LOG", None)
     env.pop("JEV_PROMPT", None)
-    if args.prompts and not env.get("JEV_API_KEY"):
+    env.pop("JEV_TEMPERATURE", None)
+    if prompts and not env.get("JEV_API_KEY"):
         die("set JEV_API_KEY or pass --api-key")
 
     binary = build_engine(args.no_build)
-    for prompt in args.prompts:
+    for prompt in prompts:
         check = subprocess.run([binary, "--prompt", prompt, "--show-prompt"],
                                capture_output=True, text=True)
         if check.returncode != 0:
@@ -148,7 +167,7 @@ def main():
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     out = (args.out or ROOT / "results" / stamp).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    for prompt in args.prompts:
+    for prompt in set(prompts):
         shutil.copy(prompt, out / f"{prompt.stem}.toml")
 
     cmd = [

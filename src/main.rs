@@ -48,6 +48,12 @@ struct Args {
     #[arg(long, env = "JEV_PROMPT")]
     prompt: Option<PathBuf>,
 
+    /// Sample Jev's move from its probabilities raised to 1/T instead of always
+    /// taking the most likely move. 0 = always the top move, 1 = sample in
+    /// proportion to Jev's probabilities.
+    #[arg(long, env = "JEV_TEMPERATURE", default_value_t = 0.0, value_parser = parse_temperature)]
+    temperature: f64,
+
     /// Ignore Jev and play uniformly random legal moves (a baseline opponent).
     #[arg(long)]
     random: bool,
@@ -70,6 +76,13 @@ fn log(msg: &str) {
 fn warn(msg: &str) {
     eprintln!("warning: {msg}");
     log(&format!("!! warning: {msg}"));
+}
+
+fn parse_temperature(s: &str) -> Result<f64, String> {
+    match s.parse::<f64>() {
+        Ok(t) if t >= 0.0 && t.is_finite() => Ok(t),
+        _ => Err("expected a non-negative number".to_string()),
+    }
 }
 
 /// Parses command-line arguments without ever exiting on bad input, since a
@@ -99,6 +112,7 @@ fn parse_args() -> Args {
                 model: jev::DEFAULT_MODEL.to_string(),
                 log_file: None,
                 prompt: None,
+                temperature: 0.0,
                 random: false,
                 show_prompt: None,
             })
@@ -252,7 +266,14 @@ fn main() -> ExitCode {
                     random_move(&game, &mut rng, &mut out)
                 } else {
                     let c = client.get_or_insert_with(|| build_client(&args, &opts));
-                    choose_move(&game, c.as_ref(), &prompt, &mut out)
+                    choose_move(
+                        &game,
+                        c.as_ref(),
+                        &prompt,
+                        args.temperature,
+                        &mut rng,
+                        &mut out,
+                    )
                 };
                 // Match runners such as fastchess expect a scored info line; Jev gives
                 // no evaluation, so report a neutral score.
@@ -273,16 +294,52 @@ fn random_move(game: &Game, rng: &mut impl Hasher, out: &mut impl Write) -> Stri
         send(out, "info string no legal moves");
         return "0000".to_string();
     }
-    rng.write_u64(moves.len() as u64);
-    let mv = Game::to_uci(&moves[rng.finish() as usize % moves.len()]);
+    let mv = Game::to_uci(&moves[(random_unit(rng) * moves.len() as f64) as usize]);
     send(out, &format!("info string random move {mv}"));
     mv
+}
+
+/// A pseudo-random number in [0, 1).
+fn random_unit(rng: &mut impl Hasher) -> f64 {
+    rng.write_u8(0);
+    (rng.finish() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// Samples a key with weight `p^(1/temperature)`. Returns `None` if all weights
+/// are zero or the temperature is zero.
+fn sample<'a>(
+    probabilities: impl IntoIterator<Item = (&'a String, f64)>,
+    temperature: f64,
+    unit: f64,
+) -> Option<&'a String> {
+    if temperature <= 0.0 {
+        return None;
+    }
+    let weighted: Vec<_> = probabilities
+        .into_iter()
+        .map(|(k, p)| (k, p.max(0.0).powf(1.0 / temperature)))
+        .filter(|(_, w)| w.is_finite() && *w > 0.0)
+        .collect();
+    let total: f64 = weighted.iter().map(|(_, w)| w).sum();
+    if total <= 0.0 {
+        return None;
+    }
+    let mut target = unit * total;
+    for (k, w) in &weighted {
+        if target < *w {
+            return Some(k);
+        }
+        target -= w;
+    }
+    weighted.last().map(|(k, _)| *k)
 }
 
 fn choose_move(
     game: &Game,
     client: Option<&JevClient>,
     prompt: &Prompt,
+    temperature: f64,
+    rng: &mut impl Hasher,
     out: &mut impl Write,
 ) -> String {
     let moves = game.legal_moves();
@@ -315,16 +372,18 @@ fn choose_move(
                 .map(|(m, p)| format!("{m}={p:.3}"))
                 .collect();
             log(&format!("   jev top moves: {}", top.join(" ")));
-            let p = decision
+            let valid = decision
                 .probabilities
-                .get(&decision.choice)
-                .copied()
-                .unwrap_or(0.0);
-            send(
-                out,
-                &format!("info string jev chose {} (p={p:.3})", decision.choice),
-            );
-            decision.choice
+                .iter()
+                .filter(|(k, _)| options.contains_key(*k))
+                .map(|(k, p)| (k, *p));
+            let (choice, how) = match sample(valid, temperature, random_unit(rng)) {
+                Some(k) => (k.clone(), "sampled"),
+                None => (decision.choice.clone(), "chose"),
+            };
+            let p = decision.probabilities.get(&choice).copied().unwrap_or(0.0);
+            send(out, &format!("info string jev {how} {choice} (p={p:.3})"));
+            choice
         }
         Err(e) => {
             send(
@@ -345,6 +404,20 @@ fn send(out: &mut impl Write, msg: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sampling() {
+        let (a, b, c) = ("a".to_string(), "b".to_string(), "c".to_string());
+        let probs = || [(&a, 0.5), (&b, 0.5), (&c, 0.0)];
+        assert_eq!(sample(probs(), 0.0, 0.9), None);
+        assert_eq!(sample(probs(), 1.0, 0.1), Some(&a));
+        assert_eq!(sample(probs(), 1.0, 0.9), Some(&b));
+        assert_eq!(sample([(&c, 0.0)], 1.0, 0.5), None);
+        // Low temperature sharpens towards the most likely move.
+        assert_eq!(sample([(&a, 0.4), (&b, 0.6)], 0.05, 0.01), Some(&b));
+        assert!(parse_temperature("-1").is_err());
+        assert_eq!(parse_temperature("0.5"), Ok(0.5));
+    }
 
     #[test]
     fn setoption_parsing() {
