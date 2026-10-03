@@ -104,6 +104,7 @@ Example variants in `prompts/`:
 | `draw-instr.toml` | safety-capture-rep, instructions say draws are bad unless behind |
 | `draw-instr-balance.toml` | draw-instr plus `{balance}` in the state |
 | `draw-instr-balance-mate.toml` | draw-instr-balance plus `{mate}` |
+| `draw-instr-balance-check.toml` | draw-instr-balance plus `{gives_check}` |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.
