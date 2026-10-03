@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, anyhow};
+
+use crate::prompt::{Prompt, Vars};
 use shakmaty::{
     CastlingMode, CastlingSide, Chess, Color, EnPassantMode, Move, Position, Role, Square,
     fen::Fen,
@@ -78,80 +80,85 @@ impl Game {
         m.to_uci(CastlingMode::Standard).to_string()
     }
 
-    /// Human-readable description of a move, used as the Jev option description.
-    pub fn describe(&self, m: &Move) -> String {
+    /// Placeholder values describing the position, for `state` and `instructions`.
+    pub fn state_vars(&self) -> Vars {
+        let side = color_name(self.pos.turn());
+        let moves = if self.history_san.is_empty() {
+            "(none)".to_string()
+        } else {
+            self.history_san.join(" ")
+        };
+        let history = if self.history_san.is_empty() {
+            "No moves have been played yet.".to_string()
+        } else if self.start_fen != fen_of(&Chess::default()) {
+            format!(
+                "Game started from FEN: {}\nMoves so far: {moves}",
+                self.start_fen
+            )
+        } else {
+            format!("Moves so far: {moves}")
+        };
+        let check = if self.pos.is_check() {
+            format!("{side} is in check.")
+        } else {
+            String::new()
+        };
+        Vars::from([
+            ("side", side.to_string()),
+            ("opponent", color_name(!self.pos.turn()).to_string()),
+            ("fen", fen_of(&self.pos)),
+            ("board", self.ascii_board().trim_end().to_string()),
+            ("moves", moves),
+            ("history", history),
+            ("check", check),
+        ])
+    }
+
+    /// Placeholder values describing one legal move, for `option`.
+    pub fn move_vars(&self, m: &Move) -> Vars {
         let san = San::from_move(&self.pos, *m).to_string();
         let mut after = self.pos.clone();
         after.play_unchecked(*m);
 
-        let mut desc = format!(
-            "{san}: {} {}",
-            role_name(m.role()),
-            move_path(m, self.pos.turn())
-        );
+        let mut details = String::new();
         if let Some(captured) = m.capture() {
-            desc.push_str(&format!(", captures {}", role_name(captured)));
+            details.push_str(&format!(", captures {}", role_name(captured)));
         }
         if let Some(promo) = m.promotion() {
-            desc.push_str(&format!(", promotes to {}", role_name(promo)));
+            details.push_str(&format!(", promotes to {}", role_name(promo)));
         }
         match m.castling_side() {
-            Some(CastlingSide::KingSide) => desc.push_str(", castles kingside"),
-            Some(CastlingSide::QueenSide) => desc.push_str(", castles queenside"),
+            Some(CastlingSide::KingSide) => details.push_str(", castles kingside"),
+            Some(CastlingSide::QueenSide) => details.push_str(", castles queenside"),
             None => {}
         }
         if after.is_checkmate() {
-            desc.push_str(", delivers checkmate");
+            details.push_str(", delivers checkmate");
         } else if after.is_check() {
-            desc.push_str(", gives check");
+            details.push_str(", gives check");
         } else if after.is_stalemate() {
-            desc.push_str(", stalemates (draw)");
+            details.push_str(", stalemates (draw)");
         }
-        desc
+
+        // shakmaty encodes castling as king-takes-rook; use the king's real destination.
+        let to = m
+            .castling_side()
+            .map_or(m.to(), |side| side.king_to(self.pos.turn()));
+        Vars::from([
+            ("uci", Self::to_uci(m)),
+            ("san", san),
+            ("piece", role_name(m.role()).to_string()),
+            ("from", m.from().map_or(String::new(), |sq| sq.to_string())),
+            ("to", to.to_string()),
+            ("details", details),
+        ])
     }
 
-    /// Builds the `state` text describing the current position for Jev.
-    pub fn describe_state(&self) -> String {
-        let side = color_name(self.pos.turn());
-        let mut s = String::new();
-        s.push_str(&format!(
-            "You are a strong chess engine playing {side}. It is {side}'s turn to move.\n\n"
-        ));
-        s.push_str(&format!(
-            "Current position (FEN): {}\n\n",
-            fen_of(&self.pos)
-        ));
-        s.push_str("Board (White pieces uppercase, Black lowercase, rank 8 at top):\n");
-        s.push_str(&self.ascii_board());
-        s.push('\n');
-        if self.history_san.is_empty() {
-            s.push_str("No moves have been played yet.\n");
-        } else {
-            if self.start_fen != fen_of(&Chess::default()) {
-                s.push_str(&format!("Game started from FEN: {}\n", self.start_fen));
-            }
-            s.push_str("Moves so far: ");
-            s.push_str(&self.history_san.join(" "));
-            s.push('\n');
-        }
-        if self.pos.is_check() {
-            s.push_str(&format!("{side} is in check.\n"));
-        }
-        s
-    }
-
-    pub fn instructions(&self) -> String {
-        format!(
-            "Which move is best for {} in this position? Pick the move most likely to win the game.",
-            color_name(self.pos.turn())
-        )
-    }
-
-    /// Options for Jev: UCI move -> description.
-    pub fn options(&self, moves: &[Move]) -> BTreeMap<String, String> {
+    /// Options for Jev: UCI move -> description rendered with `prompt`.
+    pub fn options(&self, moves: &[Move], prompt: &Prompt) -> BTreeMap<String, String> {
         moves
             .iter()
-            .map(|m| (Self::to_uci(m), self.describe(m)))
+            .map(|m| (Self::to_uci(m), prompt.option(&self.move_vars(m))))
             .collect()
     }
 
@@ -169,15 +176,6 @@ impl Game {
         }
         out.push_str("  a b c d e f g h\n");
         out
-    }
-}
-
-fn move_path(m: &Move, turn: Color) -> String {
-    // shakmaty encodes castling as king-takes-rook; describe the king's real destination.
-    let to = m.castling_side().map_or(m.to(), |side| side.king_to(turn));
-    match m.from() {
-        Some(from) => format!("from {from} to {to}"),
-        None => format!("dropped on {}", m.to()),
     }
 }
 
@@ -213,7 +211,8 @@ mod tests {
     fn applies_moves() {
         let g = Game::from_uci_position("startpos moves e2e4 e7e5 g1f3").unwrap();
         assert_eq!(g.history_san, ["e4", "e5", "Nf3"]);
-        assert!(g.describe_state().contains("Black's turn"));
+        assert_eq!(g.state_vars()["side"], "Black");
+        assert_eq!(g.state_vars()["moves"], "e4 e5 Nf3");
     }
 
     #[test]
@@ -226,7 +225,7 @@ mod tests {
     #[test]
     fn castling_description_uses_king_destination() {
         let g = Game::from_uci_position("fen r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1").unwrap();
-        let opts = g.options(&g.legal_moves());
+        let opts = g.options(&g.legal_moves(), &Prompt::baseline());
         assert_eq!(opts["e8g8"], "O-O: king from e8 to g8, castles kingside");
         assert_eq!(opts["e8c8"], "O-O-O: king from e8 to c8, castles queenside");
     }
@@ -239,7 +238,7 @@ mod tests {
     #[test]
     fn options_are_uci_keys() {
         let g = Game::from_uci_position("startpos").unwrap();
-        let opts = g.options(&g.legal_moves());
+        let opts = g.options(&g.legal_moves(), &Prompt::baseline());
         assert!(opts.contains_key("e2e4"));
         assert!(opts["g1f3"].starts_with("Nf3: knight from g1 to f3"));
     }

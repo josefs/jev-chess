@@ -29,6 +29,14 @@ Each setting can be given as a command-line flag or an environment variable
 | `--api-url` | `JEV_API_URL` | `https://api.typesafe.ai/v1/systemone`  | Decision endpoint               |
 | `--model`   | `JEV_MODEL`   | `jev-latest`                            | Jev model to use                |
 | `--log-file`| `JEV_CHESS_LOG` | (unset)                               | Append UCI traffic and Jev's top-ranked moves to this file |
+| `--prompt`  | `JEV_PROMPT`  | built-in `prompts/baseline.toml`        | Prompt template file (see below) |
+
+Additional flags:
+
+- `--random` plays uniformly random legal moves without calling Jev (a
+  reference opponent for tournaments).
+- `--show-prompt [FEN|startpos]` prints the rendered state, instructions and
+  options for a position and exits; handy when writing prompt variants.
 
 Flags are convenient for GUIs such as BanksiaGUI that launch the engine with
 fixed arguments, e.g. `jev-chess --api-key sk-...`. Note that
@@ -55,6 +63,54 @@ uci
 position startpos moves e2e4
 go
 ```
+
+Before `bestmove` the engine emits `info depth 1 score cp 0 pv <move>` (a
+neutral score; Jev doesn't evaluate positions) so that match runners such as
+fastchess accept it.
+
+## Prompt templates
+
+The text sent to Jev comes from a TOML template. Copy
+[`prompts/baseline.toml`](prompts/baseline.toml) to start a variant; it
+documents the available placeholders:
+
+- `state`, `instructions`: `{side}`, `{opponent}`, `{fen}`, `{board}`,
+  `{moves}`, `{history}`, `{check}`
+- `option` (one per legal move): `{uci}`, `{san}`, `{piece}`, `{from}`,
+  `{to}`, `{details}`
+
+Unknown placeholders are rejected when the template is loaded. Use
+`jev-chess --prompt my.toml --show-prompt` to preview the result.
+
+## Tournaments
+
+`tournament.py` runs a round-robin between prompt variants using
+[fastchess](https://github.com/Disservin/fastchess). The script downloads
+fastchess into `tools/` on first use and builds the engine.
+
+```sh
+export JEV_API_KEY=...
+./tournament.py prompts/baseline.toml prompts/my-variant.toml --random --rounds 5
+```
+
+Each prompt file becomes one engine, named after the file stem. `--random`
+adds the random-move engine as a reference. Each round is a pair of games
+from a random opening in `openings.epd`, with colours swapped.
+
+Main options: `--rounds` (default 10), `--concurrency` (default 4), `--tc`
+(default `300+5`), `--maxmoves` (default 150, then adjudicated as a draw),
+`--seed`, `--model`, `--api-url` and `--out`. See `./tournament.py --help`.
+
+Results go to `results/<timestamp>/`:
+
+- `summary.txt`: the Elo table
+- `games.pgn`
+- `fastchess.log`
+- one log per engine, with Jev's ranked moves
+- copies of the prompts used
+
+Every Jev engine makes one API call per move, so a 10-round match between two
+prompts costs about 20 games × ~40 calls per side.
 
 ## Development
 

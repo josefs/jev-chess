@@ -2,18 +2,22 @@
 
 mod game;
 mod jev;
+mod prompt;
 
 use std::{
     env,
     fs::{File, OpenOptions},
+    hash::{BuildHasher, Hasher, RandomState},
     io::{self, BufRead, Write},
     path::PathBuf,
+    process::ExitCode,
     sync::{Mutex, OnceLock},
 };
 
 use clap::{Parser, error::ErrorKind};
 use game::Game;
 use jev::JevClient;
+use prompt::Prompt;
 
 const NAME: &str = concat!("jev-chess ", env!("CARGO_PKG_VERSION"));
 
@@ -39,6 +43,18 @@ struct Args {
     /// Append a log of all UCI traffic and Jev decisions to this file.
     #[arg(long, env = "JEV_CHESS_LOG")]
     log_file: Option<PathBuf>,
+
+    /// Prompt template file (TOML); see prompts/baseline.toml for the format.
+    #[arg(long, env = "JEV_PROMPT")]
+    prompt: Option<PathBuf>,
+
+    /// Ignore Jev and play uniformly random legal moves (a baseline opponent).
+    #[arg(long)]
+    random: bool,
+
+    /// Print the Jev request for a position (UCI `position` syntax) and exit.
+    #[arg(long, value_name = "POSITION", num_args = 0..=1, default_missing_value = "startpos")]
+    show_prompt: Option<String>,
 }
 
 static LOG: OnceLock<Mutex<File>> = OnceLock::new();
@@ -47,8 +63,7 @@ fn log(msg: &str) {
     if let Some(file) = LOG.get()
         && let Ok(mut f) = file.lock()
     {
-        let _ = writeln!(f, "{msg}");
-        let _ = f.flush();
+        let _ = f.write_all(format!("[{}] {msg}\n", std::process::id()).as_bytes());
     }
 }
 
@@ -60,19 +75,16 @@ fn warn(msg: &str) {
 /// Parses command-line arguments without ever exiting on bad input, since a
 /// GUI probing the engine needs it to answer `uci` regardless.
 fn parse_args() -> Args {
+    let mut argv: Vec<String> = env::args().collect();
     // Some GUIs pass all arguments as a single string; split it up.
-    let argv: Vec<String> = env::args()
-        .enumerate()
-        .flat_map(|(i, a)| {
-            if i == 0 {
-                vec![a]
-            } else {
-                a.split_whitespace()
-                    .map(|t| t.trim_matches(|c| c == '"' || c == '\'').to_string())
-                    .collect()
-            }
-        })
-        .collect();
+    if argv.len() == 2 && argv[1].starts_with("--") && argv[1].contains(char::is_whitespace) {
+        let joined = argv.pop().unwrap();
+        argv.extend(
+            joined
+                .split_whitespace()
+                .map(|t| t.trim_matches(|c| c == '"' || c == '\'').to_string()),
+        );
+    }
 
     match Args::try_parse_from(&argv) {
         Ok(args) => args,
@@ -86,6 +98,9 @@ fn parse_args() -> Args {
                 api_url: jev::DEFAULT_URL.to_string(),
                 model: jev::DEFAULT_MODEL.to_string(),
                 log_file: None,
+                prompt: None,
+                random: false,
+                show_prompt: None,
             })
         }
     }
@@ -138,8 +153,44 @@ fn build_client(args: &Args, opts: &UciOptions) -> Option<JevClient> {
         .ok()
 }
 
-fn main() {
+fn load_prompt(args: &Args) -> anyhow::Result<Prompt> {
+    match &args.prompt {
+        Some(path) => Prompt::load(path),
+        None => Ok(Prompt::baseline()),
+    }
+}
+
+/// Prints the request that would be sent to Jev for `position`.
+fn show_prompt(args: &Args, position: &str) -> ExitCode {
+    let result = load_prompt(args).and_then(|prompt| {
+        let game = Game::from_uci_position(position)?;
+        let vars = game.state_vars();
+        println!("=== state\n{}", prompt.state(&vars));
+        println!("=== instructions\n{}", prompt.instructions(&vars));
+        println!("=== options");
+        for (uci, desc) in game.options(&game.legal_moves(), &prompt) {
+            println!("{uci}: {desc}");
+        }
+        Ok(())
+    });
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn main() -> ExitCode {
     let args = parse_args();
+    if let Some(position) = &args.show_prompt {
+        return show_prompt(&args, position);
+    }
+    let prompt = load_prompt(&args).unwrap_or_else(|e| {
+        warn(&format!("{e:#}; using the baseline prompt"));
+        Prompt::baseline()
+    });
     if let Some(path) = &args.log_file {
         match OpenOptions::new().create(true).append(true).open(path) {
             Ok(f) => {
@@ -152,6 +203,7 @@ fn main() {
     let mut opts = UciOptions::default();
     // Built lazily so that `setoption` commands sent after startup take effect.
     let mut client: Option<Option<JevClient>> = None;
+    let mut rng = RandomState::new().build_hasher();
 
     let stdin = io::stdin();
     let mut out = io::stdout();
@@ -191,8 +243,15 @@ fn main() {
                 Err(e) => send(&mut out, &format!("info string bad position: {e:#}")),
             },
             "go" => {
-                let c = client.get_or_insert_with(|| build_client(&args, &opts));
-                let mv = choose_move(&game, c.as_ref(), &mut out);
+                let mv = if args.random {
+                    random_move(&game, &mut rng, &mut out)
+                } else {
+                    let c = client.get_or_insert_with(|| build_client(&args, &opts));
+                    choose_move(&game, c.as_ref(), &prompt, &mut out)
+                };
+                // Match runners such as fastchess expect a scored info line; Jev gives
+                // no evaluation, so report a neutral score.
+                send(&mut out, &format!("info depth 1 score cp 0 pv {mv}"));
                 send(&mut out, &format!("bestmove {mv}"));
             }
             "quit" => break,
@@ -200,23 +259,48 @@ fn main() {
             _ => {}
         }
     }
+    ExitCode::SUCCESS
 }
 
-fn choose_move(game: &Game, client: Option<&JevClient>, out: &mut impl Write) -> String {
+fn random_move(game: &Game, rng: &mut impl Hasher, out: &mut impl Write) -> String {
+    let moves = game.legal_moves();
+    if moves.is_empty() {
+        send(out, "info string no legal moves");
+        return "0000".to_string();
+    }
+    rng.write_u64(moves.len() as u64);
+    let mv = Game::to_uci(&moves[rng.finish() as usize % moves.len()]);
+    send(out, &format!("info string random move {mv}"));
+    mv
+}
+
+fn choose_move(
+    game: &Game,
+    client: Option<&JevClient>,
+    prompt: &Prompt,
+    out: &mut impl Write,
+) -> String {
     let moves = game.legal_moves();
     let Some(first) = moves.first() else {
+        send(out, "info string no legal moves");
         return "0000".to_string();
     };
     let fallback = Game::to_uci(first);
     if moves.len() == 1 {
+        send(out, &format!("info string only legal move {fallback}"));
         return fallback;
     }
     let Some(client) = client else {
+        send(
+            out,
+            &format!("info string no Jev client; playing {fallback}"),
+        );
         return fallback;
     };
 
-    let options = game.options(&moves);
-    match client.choose(&game.describe_state(), &game.instructions(), &options) {
+    let options = game.options(&moves, prompt);
+    let vars = game.state_vars();
+    match client.choose(&prompt.state(&vars), &prompt.instructions(&vars), &options) {
         Ok(decision) => {
             let mut ranked: Vec<_> = decision.probabilities.iter().collect();
             ranked.sort_by(|a, b| b.1.total_cmp(a.1));
