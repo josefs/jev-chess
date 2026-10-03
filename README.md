@@ -28,6 +28,7 @@ Each setting can be given as a command-line flag or an environment variable
 | `--api-key` | `JEV_API_KEY` | (required)                              | Sent as a Bearer token          |
 | `--api-url` | `JEV_API_URL` | `https://api.typesafe.ai/v1/systemone`  | Decision endpoint               |
 | `--model`   | `JEV_MODEL`   | (unset)                                 | Optional `model` field, e.g. `jev-latest` for gateways that need it |
+| `--log-file`| `JEV_CHESS_LOG` | (unset)                               | Append UCI traffic and Jev's top-ranked moves to this file |
 
 Flags are convenient for GUIs such as BanksiaGUI that launch the engine with
 fixed arguments, e.g. `jev-chess --api-key sk-... --model jev-latest`. Note that

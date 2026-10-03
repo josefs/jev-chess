@@ -5,7 +5,10 @@ mod jev;
 
 use std::{
     env,
+    fs::{File, OpenOptions},
     io::{self, BufRead, Write},
+    path::PathBuf,
+    sync::{Mutex, OnceLock},
 };
 
 use clap::{Parser, error::ErrorKind};
@@ -32,6 +35,26 @@ struct Args {
     /// Optional `model` field, e.g. `jev-latest` for gateways that need it.
     #[arg(long, env = "JEV_MODEL")]
     model: Option<String>,
+
+    /// Append a log of all UCI traffic and Jev decisions to this file.
+    #[arg(long, env = "JEV_CHESS_LOG")]
+    log_file: Option<PathBuf>,
+}
+
+static LOG: OnceLock<Mutex<File>> = OnceLock::new();
+
+fn log(msg: &str) {
+    if let Some(file) = LOG.get()
+        && let Ok(mut f) = file.lock()
+    {
+        let _ = writeln!(f, "{msg}");
+        let _ = f.flush();
+    }
+}
+
+fn warn(msg: &str) {
+    eprintln!("warning: {msg}");
+    log(&format!("!! warning: {msg}"));
 }
 
 /// Parses command-line arguments without ever exiting on bad input, since a
@@ -57,11 +80,12 @@ fn parse_args() -> Args {
             e.exit()
         }
         Err(e) => {
-            eprintln!("warning: ignoring invalid arguments: {e}");
+            warn(&format!("ignoring invalid arguments: {e}"));
             Args::try_parse_from(&argv[..1]).unwrap_or_else(|_| Args {
                 api_key: None,
                 api_url: jev::DEFAULT_URL.to_string(),
                 model: None,
+                log_file: None,
             })
         }
     }
@@ -104,20 +128,27 @@ fn non_empty(s: &str) -> Option<String> {
 
 fn build_client(args: &Args, opts: &UciOptions) -> Option<JevClient> {
     let Some(key) = non_empty(&opts.api_key).or_else(|| args.api_key.clone()) else {
-        eprintln!(
-            "warning: no API key (--api-key / JEV_API_KEY / ApiKey option); playing the first legal move"
-        );
+        warn("no API key (--api-key / JEV_API_KEY / ApiKey option); playing the first legal move");
         return None;
     };
     let url = non_empty(&opts.api_url).unwrap_or_else(|| args.api_url.clone());
     let model = non_empty(&opts.model).or_else(|| args.model.clone());
     JevClient::new(url, key, model)
-        .inspect_err(|e| eprintln!("warning: {e:#}; playing the first legal move"))
+        .inspect_err(|e| warn(&format!("{e:#}; playing the first legal move")))
         .ok()
 }
 
 fn main() {
     let args = parse_args();
+    if let Some(path) = &args.log_file {
+        match OpenOptions::new().create(true).append(true).open(path) {
+            Ok(f) => {
+                let _ = LOG.set(Mutex::new(f));
+                log(&format!("== {NAME} started"));
+            }
+            Err(e) => warn(&format!("cannot open log file {}: {e}", path.display())),
+        }
+    }
     let mut opts = UciOptions::default();
     // Built lazily so that `setoption` commands sent after startup take effect.
     let mut client: Option<Option<JevClient>> = None;
@@ -129,6 +160,14 @@ fn main() {
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let line = line.trim();
+        if line
+            .to_ascii_lowercase()
+            .starts_with("setoption name apikey")
+        {
+            log("<< setoption name ApiKey value <redacted>");
+        } else {
+            log(&format!("<< {line}"));
+        }
         let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
 
         match cmd {
@@ -179,6 +218,14 @@ fn choose_move(game: &Game, client: Option<&JevClient>, out: &mut impl Write) ->
     let options = game.options(&moves);
     match client.choose(&game.describe_state(), &game.instructions(), &options) {
         Ok(decision) => {
+            let mut ranked: Vec<_> = decision.probabilities.iter().collect();
+            ranked.sort_by(|a, b| b.1.total_cmp(a.1));
+            let top: Vec<_> = ranked
+                .iter()
+                .take(5)
+                .map(|(m, p)| format!("{m}={p:.3}"))
+                .collect();
+            log(&format!("   jev top moves: {}", top.join(" ")));
             let p = decision
                 .probabilities
                 .get(&decision.choice)
@@ -201,6 +248,7 @@ fn choose_move(game: &Game, client: Option<&JevClient>, out: &mut impl Write) ->
 }
 
 fn send(out: &mut impl Write, msg: &str) {
+    log(&format!(">> {msg}"));
     let _ = writeln!(out, "{msg}");
     let _ = out.flush();
 }
