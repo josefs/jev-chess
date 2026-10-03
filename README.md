@@ -81,8 +81,9 @@ documents the available placeholders:
   - naming the move: `{uci}`, `{san}`, `{san_plain}` (no `x`), `{piece}`,
     `{from}`, `{to}`
   - move facts: `{capture}`, `{promotion}`, `{castling}`, `{gives_check}`, `{mate}` (only checkmate/stalemate), or
-    all four as `{details}`; `{repetition}` (the move returns to an earlier
-    position)
+    all four as `{details}`; `{exchange}` (net material after recaptures, for
+    captures); `{threat}` (the move allows mate in one); `{repetition}` (the
+    move returns to an earlier position)
   - static one-ply analysis: `{safety}` (can the moved piece be captured?),
     `{hanging}` (other pieces left exposed), `{attacks}` (enemy pieces the moved
     piece attacks), `{material}` (balance after the move)
@@ -105,6 +106,9 @@ Example variants in `prompts/`:
 | `draw-instr-balance.toml` | draw-instr plus `{balance}` in the state |
 | `draw-instr-balance-mate.toml` | draw-instr-balance plus `{mate}` |
 | `draw-instr-balance-check.toml` | draw-instr-balance plus `{gives_check}` |
+| `mate-threat.toml` | draw-instr-balance-mate plus `{threat}` |
+| `mate-exchange.toml` | draw-instr-balance-mate plus `{exchange}` |
+| `mate-threat-exchange.toml` | draw-instr-balance-mate plus both |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.

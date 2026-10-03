@@ -179,6 +179,30 @@ impl Game {
         let to = m.castling_side().map_or(m.to(), |side| side.king_to(us));
         let board = after.board();
 
+        let threat = if !after.is_game_over()
+            && after.legal_moves().iter().any(|reply| {
+                let mut next = after.clone();
+                next.play_unchecked(*reply);
+                next.is_checkmate()
+            }) {
+            ", allows checkmate in one"
+        } else {
+            ""
+        };
+
+        let exchange = match m.capture() {
+            Some(captured) => {
+                let moved = m.promotion().unwrap_or(m.role());
+                let gain = value(captured) + m.promotion().map_or(0, |p| value(p) - 1);
+                match see(board, to, gain, moved, !us) {
+                    n if n > 0 => format!(", wins {n} net after exchanges"),
+                    0 => ", even trade".to_string(),
+                    n => format!(", loses {} net after exchanges", -n),
+                }
+            }
+            None => String::new(),
+        };
+
         let safety = match board.role_at(to) {
             Some(role) if role != Role::King => match exposure(board, to, us) {
                 Some(Exposure {
@@ -247,6 +271,8 @@ impl Game {
             ("castling", castling.to_string()),
             ("gives_check", gives_check.to_string()),
             ("mate", mate.to_string()),
+            ("threat", threat.to_string()),
+            ("exchange", exchange),
             ("safety", safety),
             ("hanging", hanging),
             ("attacks", attacks),
@@ -307,6 +333,39 @@ fn exposure(board: &Board, sq: Square, owner: Color) -> Option<Exposure> {
         .min_by_key(|&r| value(r))?;
     let target = board.role_at(sq)?;
     (!defended || value(attacker) < value(target)).then_some(Exposure { attacker, defended })
+}
+
+/// Static exchange evaluation on `sq` after a capture that gained `gain` and
+/// left a `on_square` piece there, with `side` to recapture. Both sides keep
+/// recapturing with their cheapest piece and may stop whenever that is better.
+/// Returns the net gain for the capturing side. Ignores pins.
+fn see(board: &Board, sq: Square, gain: i32, on_square: Role, side: Color) -> i32 {
+    let mut occupied = board.occupied();
+    let mut gains = vec![gain];
+    let (mut on_square, mut side) = (on_square, side);
+    loop {
+        let attackers = board.attacks_to(sq, side, occupied) & occupied;
+        let Some((from, role)) = attackers
+            .into_iter()
+            .filter_map(|a| board.role_at(a).map(|r| (a, r)))
+            .min_by_key(|&(_, r)| value(r))
+        else {
+            break;
+        };
+        if role == Role::King && (board.attacks_to(sq, !side, occupied) & occupied).any() {
+            break;
+        }
+        gains.push(value(on_square) - gains.last().unwrap());
+        on_square = role;
+        occupied.discard(from);
+        side = !side;
+    }
+    while gains.len() > 1 {
+        let last = gains.pop().unwrap();
+        let prev = gains.last_mut().unwrap();
+        *prev = -(-*prev).max(last);
+    }
+    gains[0]
 }
 
 fn value(r: Role) -> i32 {
@@ -432,6 +491,47 @@ mod tests {
         let check = vars(fen, "f5f6");
         assert_eq!(check["gives_check"], ", gives check");
         assert_eq!(check["mate"], "");
+    }
+
+    #[test]
+    fn threat_flags_moves_allowing_mate() {
+        // Back rank: Ra1 drops the rook to ...Rxa1#.
+        let fen = "r5k1/8/8/8/8/8/5PPP/1R4K1 w - - 0 1";
+        assert_eq!(vars(fen, "b1a1")["threat"], ", allows checkmate in one");
+        assert_eq!(vars(fen, "b1b7")["threat"], "");
+        assert_eq!(vars(fen, "h2h3")["threat"], "");
+    }
+
+    #[test]
+    fn exchange_evaluates_recaptures() {
+        // Knight takes a pawn defended by a pawn: loses 2.
+        let fen = "4k3/8/2p5/3p4/8/4N3/8/4K3 w - - 0 1";
+        assert_eq!(
+            vars(fen, "e3d5")["exchange"],
+            ", loses 2 net after exchanges"
+        );
+        // Undefended pawn: wins 1.
+        let fen = "4k3/8/8/3p4/8/4N3/8/4K3 w - - 0 1";
+        assert_eq!(
+            vars(fen, "e3d5")["exchange"],
+            ", wins 1 net after exchanges"
+        );
+        // Knight takes knight, recaptured by pawn: even trade.
+        let fen = "4k3/8/2p5/3n4/8/4N3/8/4K3 w - - 0 1";
+        assert_eq!(vars(fen, "e3d5")["exchange"], ", even trade");
+        // Pawn takes defended knight: wins 2 (3 - 1).
+        let fen = "4k3/8/2p5/3n4/4P3/8/8/4K3 w - - 0 1";
+        assert_eq!(
+            vars(fen, "e4d5")["exchange"],
+            ", wins 2 net after exchanges"
+        );
+        // X-ray: rook takes pawn defended by a rook, backed by our second rook.
+        let fen = "3rk3/8/8/3p4/8/8/3R4/3RK3 w - - 0 1";
+        assert_eq!(
+            vars(fen, "d2d5")["exchange"],
+            ", wins 1 net after exchanges"
+        );
+        assert_eq!(vars(fen, "d2d3")["exchange"], "");
     }
 
     #[test]

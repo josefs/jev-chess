@@ -41,6 +41,10 @@
 #                 (the mover's other pieces)
 #   {attacks}     ", attacks rook on a8 and knight on c6" (enemy pieces the
 #                 moved piece attacks, kings excluded)
+#   {exchange}    for captures: ", wins 2 net after exchanges" / ", even trade" /
+#                 ", loses 2 net after exchanges" (both sides keep recapturing
+#                 on the square with their cheapest piece while it pays)
+#   {threat}      ", allows checkmate in one" (the opponent can mate next move)
 #   {material}    ", material after: even" / ", material after: White ahead by 3"
 #                 (pawn 1, knight/bishop 3, rook 5, queen 9)
 
