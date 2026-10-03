@@ -30,6 +30,7 @@ Each setting can be given as a command-line flag or an environment variable
 | `--model`   | `JEV_MODEL`   | `jev-latest`                            | Jev model to use                |
 | `--log-file`| `JEV_CHESS_LOG` | (unset)                               | Append UCI traffic and Jev's top-ranked moves to this file |
 | `--prompt`  | `JEV_PROMPT`  | built-in `prompts/baseline.toml`        | Prompt template file (see below) |
+| `--temperature` | `JEV_TEMPERATURE` | `0`                         | `0` plays Jev's most likely move; above 0, samples moves with weight p^(1/T) (`1` = Jev's own probabilities) |
 
 Additional flags:
 
@@ -80,7 +81,8 @@ documents the available placeholders:
   - naming the move: `{uci}`, `{san}`, `{san_plain}` (no `x`), `{piece}`,
     `{from}`, `{to}`
   - move facts: `{capture}`, `{promotion}`, `{castling}`, `{gives_check}`, or
-    all four as `{details}`
+    all four as `{details}`; `{repetition}` (the move returns to an earlier
+    position)
   - static one-ply analysis: `{safety}` (can the moved piece be captured?),
     `{hanging}` (other pieces left exposed), `{attacks}` (enemy pieces the moved
     piece attacks), `{material}` (balance after the move)
@@ -98,6 +100,7 @@ Example variants in `prompts/`:
 | `safety-capture.toml` | safety-only plus `{capture}` |
 | `safety-check.toml` | safety-only plus `{gives_check}` |
 | `safety-material.toml` | safety-only plus `{material}` |
+| `safety-capture-rep.toml` | safety-capture plus `{repetition}` |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.
@@ -116,6 +119,11 @@ export JEV_API_KEY=...
 Each prompt file becomes one engine, named after the file stem. `--random`
 adds the random-move engine as a reference. Each round is a pair of games
 from a random opening in `openings.epd`, with colours swapped.
+
+Append `@T` to a prompt file to give that engine its own temperature, e.g.
+`prompts/bare.toml@0.5` (engine name `bare@0.5`); `--temperature` sets it for
+the rest. Sampling breaks repetition loops between deterministic engines and
+lets repeated openings play out differently.
 
 Main options: `--rounds` (default 10), `--concurrency` (default 4), `--tc`
 (default `300+5`), `--maxmoves` (default 150, then adjudicated as a draw),
