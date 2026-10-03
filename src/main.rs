@@ -3,19 +3,22 @@
 mod game;
 mod jev;
 
-use std::io::{self, BufRead, Write};
+use std::{
+    env,
+    io::{self, BufRead, Write},
+};
 
+use clap::{Parser, error::ErrorKind};
 use game::Game;
 use jev::JevClient;
-
-use clap::Parser;
 
 const NAME: &str = concat!("jev-chess ", env!("CARGO_PKG_VERSION"));
 
 /// A UCI chess engine that lets Jev pick its moves.
 ///
-/// Each flag falls back to the corresponding environment variable.
-#[derive(Parser)]
+/// Each flag falls back to the corresponding environment variable. The same
+/// settings are also exposed as UCI options (ApiKey, ApiUrl, Model).
+#[derive(Parser, Clone)]
 #[command(version)]
 struct Args {
     /// Jev API key, sent as a Bearer token.
@@ -31,23 +34,93 @@ struct Args {
     model: Option<String>,
 }
 
-fn main() {
-    let args = Args::parse();
-    let client = match args.api_key {
-        None => {
-            eprintln!(
-                "warning: no API key (--api-key / JEV_API_KEY); playing the first legal move"
-            );
-            None
-        }
-        Some(key) => match JevClient::new(args.api_url, key, args.model) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                eprintln!("warning: {e:#}; playing the first legal move");
-                None
+/// Parses command-line arguments without ever exiting on bad input, since a
+/// GUI probing the engine needs it to answer `uci` regardless.
+fn parse_args() -> Args {
+    // Some GUIs pass all arguments as a single string; split it up.
+    let argv: Vec<String> = env::args()
+        .enumerate()
+        .flat_map(|(i, a)| {
+            if i == 0 {
+                vec![a]
+            } else {
+                a.split_whitespace()
+                    .map(|t| t.trim_matches(|c| c == '"' || c == '\'').to_string())
+                    .collect()
             }
-        },
+        })
+        .collect();
+
+    match Args::try_parse_from(&argv) {
+        Ok(args) => args,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
+            e.exit()
+        }
+        Err(e) => {
+            eprintln!("warning: ignoring invalid arguments: {e}");
+            Args::try_parse_from(&argv[..1]).unwrap_or_else(|_| Args {
+                api_key: None,
+                api_url: jev::DEFAULT_URL.to_string(),
+                model: None,
+            })
+        }
+    }
+}
+
+/// Settings that can be overridden at runtime via UCI `setoption`.
+/// An empty value falls back to the command-line/environment setting.
+#[derive(Default)]
+struct UciOptions {
+    api_key: String,
+    api_url: String,
+    model: String,
+}
+
+impl UciOptions {
+    /// Applies `setoption name <id> value <x>`; returns whether anything changed.
+    fn set(&mut self, args: &str) -> bool {
+        let Some(rest) = args.trim().strip_prefix("name") else {
+            return false;
+        };
+        let (name, value) = match rest.split_once(" value") {
+            Some((n, v)) => (n.trim(), v.trim()),
+            None => (rest.trim(), ""),
+        };
+        let value = if value == "<empty>" { "" } else { value };
+        let slot = match name.to_ascii_lowercase().as_str() {
+            "apikey" => &mut self.api_key,
+            "apiurl" => &mut self.api_url,
+            "model" => &mut self.model,
+            _ => return false,
+        };
+        *slot = value.to_string();
+        true
+    }
+}
+
+fn non_empty(s: &str) -> Option<String> {
+    (!s.is_empty()).then(|| s.to_string())
+}
+
+fn build_client(args: &Args, opts: &UciOptions) -> Option<JevClient> {
+    let Some(key) = non_empty(&opts.api_key).or_else(|| args.api_key.clone()) else {
+        eprintln!(
+            "warning: no API key (--api-key / JEV_API_KEY / ApiKey option); playing the first legal move"
+        );
+        return None;
     };
+    let url = non_empty(&opts.api_url).unwrap_or_else(|| args.api_url.clone());
+    let model = non_empty(&opts.model).or_else(|| args.model.clone());
+    JevClient::new(url, key, model)
+        .inspect_err(|e| eprintln!("warning: {e:#}; playing the first legal move"))
+        .ok()
+}
+
+fn main() {
+    let args = parse_args();
+    let mut opts = UciOptions::default();
+    // Built lazily so that `setoption` commands sent after startup take effect.
+    let mut client: Option<Option<JevClient>> = None;
 
     let stdin = io::stdin();
     let mut out = io::stdout();
@@ -56,26 +129,35 @@ fn main() {
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let line = line.trim();
-        let (cmd, args) = line.split_once(' ').unwrap_or((line, ""));
+        let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
 
         match cmd {
             "uci" => {
                 send(&mut out, &format!("id name {NAME}"));
                 send(&mut out, "id author josefs");
+                send(&mut out, "option name ApiKey type string default <empty>");
+                send(&mut out, "option name ApiUrl type string default <empty>");
+                send(&mut out, "option name Model type string default <empty>");
                 send(&mut out, "uciok");
             }
             "isready" => send(&mut out, "readyok"),
+            "setoption" => {
+                if opts.set(rest) {
+                    client = None;
+                }
+            }
             "ucinewgame" => game = Game::default(),
-            "position" => match Game::from_uci_position(args) {
+            "position" => match Game::from_uci_position(rest) {
                 Ok(g) => game = g,
                 Err(e) => send(&mut out, &format!("info string bad position: {e:#}")),
             },
             "go" => {
-                let mv = choose_move(&game, client.as_ref(), &mut out);
+                let c = client.get_or_insert_with(|| build_client(&args, &opts));
+                let mv = choose_move(&game, c.as_ref(), &mut out);
                 send(&mut out, &format!("bestmove {mv}"));
             }
             "quit" => break,
-            // `stop`, `setoption`, `ponderhit`, `debug`, `register`: nothing to do.
+            // `stop`, `ponderhit`, `debug`, `register`: nothing to do.
             _ => {}
         }
     }
@@ -121,4 +203,21 @@ fn choose_move(game: &Game, client: Option<&JevClient>, out: &mut impl Write) ->
 fn send(out: &mut impl Write, msg: &str) {
     let _ = writeln!(out, "{msg}");
     let _ = out.flush();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn setoption_parsing() {
+        let mut o = UciOptions::default();
+        assert!(o.set("name ApiKey value sk-1"));
+        assert!(o.set("name Model value jev latest"));
+        assert!(o.set("name ApiUrl value <empty>"));
+        assert!(!o.set("name Hash value 16"));
+        assert_eq!(o.api_key, "sk-1");
+        assert_eq!(o.model, "jev latest");
+        assert_eq!(o.api_url, "");
+    }
 }

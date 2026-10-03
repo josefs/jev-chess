@@ -31,7 +31,13 @@ Each setting can be given as a command-line flag or an environment variable
 
 Flags are convenient for GUIs such as BanksiaGUI that launch the engine with
 fixed arguments, e.g. `jev-chess --api-key sk-... --model jev-latest`. Note that
-command-line arguments are visible to other users via `ps`.
+command-line arguments are visible to other users via `ps`. If the GUI passes
+all arguments as one string, it is split on whitespace. Invalid arguments are
+reported on stderr but never stop the engine from speaking UCI.
+
+The same settings are also exposed as UCI options `ApiKey`, `ApiUrl` and
+`Model`, configurable from the GUI's engine options dialog. An empty option
+value falls back to the flag/environment setting.
 
 ## Usage
 
