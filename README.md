@@ -95,6 +95,9 @@ Example variants in `prompts/`:
 | `uci-only.toml` | just the UCI move |
 | `safety-only.toml` | bare plus `{safety}` and `{hanging}` warnings |
 | `annotated.toml` | baseline plus all analysis placeholders |
+| `safety-capture.toml` | safety-only plus `{capture}` |
+| `safety-check.toml` | safety-only plus `{gives_check}` |
+| `safety-material.toml` | safety-only plus `{material}` |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.
