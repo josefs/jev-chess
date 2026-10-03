@@ -32,9 +32,9 @@ struct Args {
     #[arg(long, env = "JEV_API_URL", default_value = jev::DEFAULT_URL)]
     api_url: String,
 
-    /// Optional `model` field, e.g. `jev-latest` for gateways that need it.
-    #[arg(long, env = "JEV_MODEL")]
-    model: Option<String>,
+    /// Jev model to use.
+    #[arg(long, env = "JEV_MODEL", default_value = jev::DEFAULT_MODEL)]
+    model: String,
 
     /// Append a log of all UCI traffic and Jev decisions to this file.
     #[arg(long, env = "JEV_CHESS_LOG")]
@@ -84,7 +84,7 @@ fn parse_args() -> Args {
             Args::try_parse_from(&argv[..1]).unwrap_or_else(|_| Args {
                 api_key: None,
                 api_url: jev::DEFAULT_URL.to_string(),
-                model: None,
+                model: jev::DEFAULT_MODEL.to_string(),
                 log_file: None,
             })
         }
@@ -132,7 +132,7 @@ fn build_client(args: &Args, opts: &UciOptions) -> Option<JevClient> {
         return None;
     };
     let url = non_empty(&opts.api_url).unwrap_or_else(|| args.api_url.clone());
-    let model = non_empty(&opts.model).or_else(|| args.model.clone());
+    let model = non_empty(&opts.model).unwrap_or_else(|| args.model.clone());
     JevClient::new(url, key, model)
         .inspect_err(|e| warn(&format!("{e:#}; playing the first legal move")))
         .ok()

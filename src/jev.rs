@@ -10,19 +10,19 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_URL: &str = "https://api.typesafe.ai/v1/systemone";
+pub const DEFAULT_MODEL: &str = "jev-latest";
 const QUESTION_KEY: &str = "move";
 
 pub struct JevClient {
     http: reqwest::blocking::Client,
     url: String,
     api_key: String,
-    model: Option<String>,
+    model: String,
 }
 
 #[derive(Serialize)]
 struct Request<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    model: Option<&'a str>,
+    model: &'a str,
     state: &'a str,
     questions: BTreeMap<&'a str, Question<'a>>,
 }
@@ -55,8 +55,7 @@ pub struct Decision {
 }
 
 impl JevClient {
-    pub fn new(url: String, api_key: String, model: Option<String>) -> Result<Self> {
-        let model = model.filter(|m| !m.is_empty());
+    pub fn new(url: String, api_key: String, model: String) -> Result<Self> {
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
@@ -76,7 +75,7 @@ impl JevClient {
         options: &BTreeMap<String, String>,
     ) -> Result<Decision> {
         let request = Request {
-            model: self.model.as_deref(),
+            model: &self.model,
             state,
             questions: BTreeMap::from([(
                 QUESTION_KEY,
