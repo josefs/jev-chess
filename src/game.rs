@@ -113,8 +113,19 @@ impl Game {
         } else {
             String::new()
         };
+        let board = self.pos.board();
+        let (white, black) = (material(board, Color::White), material(board, Color::Black));
+        let balance = format!(
+            "Material: White {white}, Black {black} ({}).",
+            match white - black {
+                0 => "even".to_string(),
+                d if d > 0 => format!("White is ahead by {d}"),
+                d => format!("Black is ahead by {}", -d),
+            }
+        );
         Vars::from([
             ("side", side.to_string()),
+            ("balance", balance),
             ("opponent", color_name(!self.pos.turn()).to_string()),
             ("fen", fen_of(&self.pos)),
             ("board", self.ascii_board().trim_end().to_string()),
@@ -402,6 +413,20 @@ mod tests {
         assert_eq!(v["capture"], ", captures pawn");
         assert_eq!(v["material"], ", material after: White ahead by 1");
         assert_eq!(v["details"], ", captures pawn");
+    }
+
+    #[test]
+    fn balance_in_state() {
+        let g = Game::from_uci_position("startpos").unwrap();
+        assert_eq!(
+            g.state_vars()["balance"],
+            "Material: White 39, Black 39 (even)."
+        );
+        let g = Game::from_uci_position("startpos moves e2e4 d7d5 e4d5").unwrap();
+        assert_eq!(
+            g.state_vars()["balance"],
+            "Material: White 39, Black 38 (White is ahead by 1)."
+        );
     }
 
     #[test]

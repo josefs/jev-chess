@@ -8,7 +8,7 @@ use serde::Deserialize;
 const BASELINE: &str = include_str!("../prompts/baseline.toml");
 
 pub const STATE_VARS: &[&str] = &[
-    "side", "opponent", "fen", "board", "moves", "history", "check",
+    "side", "opponent", "fen", "board", "moves", "history", "check", "balance",
 ];
 pub const OPTION_VARS: &[&str] = &[
     "uci",

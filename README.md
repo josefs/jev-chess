@@ -76,7 +76,7 @@ The text sent to Jev comes from a TOML template. Copy
 documents the available placeholders:
 
 - `state`, `instructions`: `{side}`, `{opponent}`, `{fen}`, `{board}`,
-  `{moves}`, `{history}`, `{check}`
+  `{moves}`, `{history}`, `{check}`, `{balance}` (material count)
 - `option` (one per legal move):
   - naming the move: `{uci}`, `{san}`, `{san_plain}` (no `x`), `{piece}`,
     `{from}`, `{to}`
@@ -101,6 +101,8 @@ Example variants in `prompts/`:
 | `safety-check.toml` | safety-only plus `{gives_check}` |
 | `safety-material.toml` | safety-only plus `{material}` |
 | `safety-capture-rep.toml` | safety-capture plus `{repetition}` |
+| `draw-instr.toml` | safety-capture-rep, instructions say draws are bad unless behind |
+| `draw-instr-balance.toml` | draw-instr plus `{balance}` in the state |
 
 Unknown placeholders are rejected when the template is loaded. Use
 `jev-chess --prompt my.toml --show-prompt` to preview the result.

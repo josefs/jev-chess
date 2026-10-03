@@ -9,6 +9,8 @@
 #   {history}   "No moves have been played yet." or "Moves so far: ..." (with
 #               the starting FEN if the game did not start from the initial position)
 #   {check}     "<side> is in check." or empty
+#   {balance}   "Material: White 39, Black 36 (White is ahead by 3)." (pawn 1,
+#               knight/bishop 3, rook 5, queen 9)
 #
 # Placeholders available in `option` (one per legal move):
 #   {uci}       move in UCI notation, e.g. e2e4 (this is also the option key)
