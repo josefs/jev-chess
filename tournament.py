@@ -194,17 +194,35 @@ def main():
     print(f"Results: {out}\n")
 
     # fastchess writes config.json (for resuming) to its working directory.
-    with open(out / "summary.txt", "w") as summary:
+    lines = []
+    with open(out / "output.txt", "w") as output:
         proc = subprocess.Popen(cmd, cwd=out, env=env, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True, bufsize=1)
         try:
             for line in proc.stdout:
                 sys.stdout.write(line)
-                summary.write(line)
+                output.write(line)
+                lines.append(line)
         except KeyboardInterrupt:
             proc.terminate()
             print(f"\nInterrupted; resume with: cd {out} && {fastchess} -config file=config.json")
-        return proc.wait()
+        status = proc.wait()
+
+    # fastchess also prints interim tables while games are still running, so the
+    # last table in the output is the final one.
+    table = last_table(lines)
+    if table:
+        (out / "summary.txt").write_text(table)
+        print(f"\n=== Final results ({out / 'summary.txt'}) ===\n{table}", end="")
+    return status
+
+
+def last_table(lines):
+    """Returns the last block of fastchess output delimited by dashed lines."""
+    rules = [i for i, line in enumerate(lines) if line.startswith("-----")]
+    if len(rules) < 2:
+        return ""
+    return "".join(lines[rules[-2]:rules[-1] + 1])
 
 
 if __name__ == "__main__":

@@ -139,7 +139,9 @@ Main options: `--rounds` (default 10), `--concurrency` (default 4), `--tc`
 
 Results go to `results/<timestamp>/`:
 
-- `summary.txt`: the Elo table
+- `summary.txt`: the final Elo table (fastchess also prints interim tables
+  while games are still running; the script re-prints the final one at the end)
+- `output.txt`: the full fastchess console output
 - `games.pgn`
 - `fastchess.log`
 - one log per engine, with Jev's ranked moves
