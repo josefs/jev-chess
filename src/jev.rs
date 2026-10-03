@@ -4,7 +4,7 @@
 //! typed answers. We only use the `choice` question type, which returns a
 //! probability for each declared option.
 
-use std::{collections::BTreeMap, env, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -55,11 +55,8 @@ pub struct Decision {
 }
 
 impl JevClient {
-    /// Builds a client from `JEV_API_KEY`, `JEV_API_URL` and `JEV_MODEL`.
-    pub fn from_env() -> Result<Self> {
-        let api_key = env::var("JEV_API_KEY").context("JEV_API_KEY is not set")?;
-        let url = env::var("JEV_API_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
-        let model = env::var("JEV_MODEL").ok().filter(|m| !m.is_empty());
+    pub fn new(url: String, api_key: String, model: Option<String>) -> Result<Self> {
+        let model = model.filter(|m| !m.is_empty());
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;

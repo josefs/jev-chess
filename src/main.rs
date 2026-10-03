@@ -8,15 +8,45 @@ use std::io::{self, BufRead, Write};
 use game::Game;
 use jev::JevClient;
 
+use clap::Parser;
+
 const NAME: &str = concat!("jev-chess ", env!("CARGO_PKG_VERSION"));
 
+/// A UCI chess engine that lets Jev pick its moves.
+///
+/// Each flag falls back to the corresponding environment variable.
+#[derive(Parser)]
+#[command(version)]
+struct Args {
+    /// Jev API key, sent as a Bearer token.
+    #[arg(long, env = "JEV_API_KEY", hide_env_values = true)]
+    api_key: Option<String>,
+
+    /// Jev decision endpoint.
+    #[arg(long, env = "JEV_API_URL", default_value = jev::DEFAULT_URL)]
+    api_url: String,
+
+    /// Optional `model` field, e.g. `jev-latest` for gateways that need it.
+    #[arg(long, env = "JEV_MODEL")]
+    model: Option<String>,
+}
+
 fn main() {
-    let client = match JevClient::from_env() {
-        Ok(c) => Some(c),
-        Err(e) => {
-            eprintln!("warning: {e:#}; falling back to the first legal move");
+    let args = Args::parse();
+    let client = match args.api_key {
+        None => {
+            eprintln!(
+                "warning: no API key (--api-key / JEV_API_KEY); playing the first legal move"
+            );
             None
         }
+        Some(key) => match JevClient::new(args.api_url, key, args.model) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("warning: {e:#}; playing the first legal move");
+                None
+            }
+        },
     };
 
     let stdin = io::stdin();

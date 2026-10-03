@@ -20,18 +20,24 @@ as a UCI `info string`.
 
 ## Configuration
 
-| Variable      | Default                                 | Description                     |
-| ------------- | --------------------------------------- | ------------------------------- |
-| `JEV_API_KEY` | (required)                              | Sent as a Bearer token          |
-| `JEV_API_URL` | `https://api.typesafe.ai/v1/systemone`  | Decision endpoint               |
-| `JEV_MODEL`   | (unset)                                 | Optional `model` field, e.g. `jev-latest` for gateways that need it |
+Each setting can be given as a command-line flag or an environment variable
+(flags take precedence):
+
+| Flag        | Variable      | Default                                 | Description                     |
+| ----------- | ------------- | --------------------------------------- | ------------------------------- |
+| `--api-key` | `JEV_API_KEY` | (required)                              | Sent as a Bearer token          |
+| `--api-url` | `JEV_API_URL` | `https://api.typesafe.ai/v1/systemone`  | Decision endpoint               |
+| `--model`   | `JEV_MODEL`   | (unset)                                 | Optional `model` field, e.g. `jev-latest` for gateways that need it |
+
+Flags are convenient for GUIs such as BanksiaGUI that launch the engine with
+fixed arguments, e.g. `jev-chess --api-key sk-... --model jev-latest`. Note that
+command-line arguments are visible to other users via `ps`.
 
 ## Usage
 
 ```sh
 cargo build --release
-export JEV_API_KEY=...
-./target/release/jev-chess
+./target/release/jev-chess --api-key ...
 ```
 
 Register `target/release/jev-chess` as a UCI engine in any chess GUI
