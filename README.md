@@ -9,9 +9,12 @@ A UCI chess engine, written in Rust, that lets [Jev](https://typesafe.ai)
    [`shakmaty`](https://crates.io/crates/shakmaty), which also generates all
    legal moves.
 2. On `go`, it sends Jev a single `choice` question: the `state` describes the
-   position (FEN, ASCII board, move history) and each option is a legal move
-   keyed by its UCI notation (e.g. `e2e4`) with a short description
-   (`e4: pawn from e2 to e4, gives check`, ...).
+   position (FEN, ASCII board, material, move history) and each option is a
+   legal move keyed by its UCI notation (e.g. `e2e4`) with a short description
+   annotated by a static analysis of the move (`Nd5: knight from e3 to d5,
+   captures knight, wins 1 net after exchanges, ...`). The default prompt is
+   [`prompts/threat-loses.toml`](prompts/threat-loses.toml), the winner of the
+   prompt tournaments so far (see below).
 3. The option with the highest probability is returned as `bestmove`.
 
 If there is only one legal move, Jev is not called. If the API call fails or no
@@ -29,7 +32,7 @@ Each setting can be given as a command-line flag or an environment variable
 | `--api-url` | `JEV_API_URL` | `https://api.typesafe.ai/v1/systemone`  | Decision endpoint               |
 | `--model`   | `JEV_MODEL`   | `jev-latest`                            | Jev model to use                |
 | `--log-file`| `JEV_CHESS_LOG` | (unset)                               | Append UCI traffic and Jev's top-ranked moves to this file |
-| `--prompt`  | `JEV_PROMPT`  | built-in `prompts/baseline.toml`        | Prompt template file (see below) |
+| `--prompt`  | `JEV_PROMPT`  | built-in `prompts/threat-loses.toml`    | Prompt template file (see below) |
 | `--temperature` | `JEV_TEMPERATURE` | `0`                         | `0` plays Jev's most likely move; above 0, samples moves with weight p^(1/T) (`1` = Jev's own probabilities) |
 
 Additional flags:
@@ -95,7 +98,7 @@ Example variants in `prompts/`:
 
 | File | Options |
 | --- | --- |
-| `baseline.toml` | SAN, squares, captures/checks (the default) |
+| `baseline.toml` | SAN, squares, captures/checks (the original prompt) |
 | `bare.toml` | move name and squares only, no consequences |
 | `uci-only.toml` | just the UCI move |
 | `safety-only.toml` | bare plus `{safety}` and `{hanging}` warnings |

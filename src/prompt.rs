@@ -5,6 +5,9 @@ use std::{collections::BTreeMap, fs, path::Path};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
+/// The prompt used when no `--prompt` is given: the best variant so far.
+const DEFAULT: &str = include_str!("../prompts/threat-loses.toml");
+#[cfg(test)]
 const BASELINE: &str = include_str!("../prompts/baseline.toml");
 
 pub const STATE_VARS: &[&str] = &[
@@ -96,6 +99,11 @@ impl Labels {
 }
 
 impl Prompt {
+    pub fn builtin() -> Self {
+        Self::parse(DEFAULT).expect("built-in default prompt is valid")
+    }
+
+    #[cfg(test)]
     pub fn baseline() -> Self {
         Self::parse(BASELINE).expect("built-in baseline prompt is valid")
     }
@@ -187,6 +195,7 @@ mod tests {
     #[test]
     fn baseline_parses() {
         Prompt::baseline();
+        Prompt::builtin();
     }
 
     #[test]

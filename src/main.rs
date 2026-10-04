@@ -170,7 +170,7 @@ fn build_client(args: &Args, opts: &UciOptions) -> Option<JevClient> {
 fn load_prompt(args: &Args) -> anyhow::Result<Prompt> {
     match &args.prompt {
         Some(path) => Prompt::load(path),
-        None => Ok(Prompt::baseline()),
+        None => Ok(Prompt::builtin()),
     }
 }
 
@@ -207,8 +207,8 @@ fn main() -> ExitCode {
         return show_prompt(&args, position);
     }
     let prompt = load_prompt(&args).unwrap_or_else(|e| {
-        warn(&format!("{e:#}; using the baseline prompt"));
-        Prompt::baseline()
+        warn(&format!("{e:#}; using the built-in prompt"));
+        Prompt::builtin()
     });
     if let Some(path) = &args.log_file {
         match OpenOptions::new().create(true).append(true).open(path) {
