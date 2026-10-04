@@ -1,25 +1,11 @@
 # jev-chess
 
-A UCI chess engine, written in Rust, that lets [Jev](https://typesafe.ai)
-(TypeSafe AI's "System One" decision model) pick its moves.
+A chess bot that uses [Jev](https://typesafe.ai)
+(TypeSafe AI's "System One" decision model) to pick it's move.
 
-## How it works
+Unsurprisingly, jev-chess plays very poorly. It doesn't do any reasoning, it relies "System One" thinking in the words of typesafe.
 
-1. The engine tracks the game from UCI `position` commands using
-   [`shakmaty`](https://crates.io/crates/shakmaty), which also generates all
-   legal moves.
-2. On `go`, it sends Jev a single `choice` question: the `state` describes the
-   position (FEN, ASCII board, material, move history) and each option is a
-   legal move keyed by its UCI notation (e.g. `e2e4`) with a short description
-   annotated by a static analysis of the move (`Nd5: knight from e3 to d5,
-   captures knight, wins 1 net after exchanges, ...`). The default prompt is
-   [`prompts/threat-loses.toml`](prompts/threat-loses.toml), the winner of the
-   prompt tournaments so far (see below).
-3. The option with the highest probability is returned as `bestmove`.
-
-If there is only one legal move, Jev is not called. If the API call fails or no
-API key is configured, the first legal move is played and the error is reported
-as a UCI `info string`.
+Note that you will need an API Key from typesafe in order to use jev-chess.
 
 ## Configuration
 
