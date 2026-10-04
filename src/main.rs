@@ -371,7 +371,8 @@ fn choose_move(
                 .take(5)
                 .map(|(m, p)| format!("{m}={p:.3}"))
                 .collect();
-            log(&format!("   jev top moves: {}", top.join(" ")));
+            let model = decision.model.as_deref().unwrap_or("unknown model");
+            log(&format!("   jev ({model}) top moves: {}", top.join(" ")));
             let valid = decision
                 .probabilities
                 .iter()

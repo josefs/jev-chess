@@ -21,6 +21,11 @@ Each setting can be given as a command-line flag or an environment variable
 | `--prompt`  | `JEV_PROMPT`  | built-in `prompts/threat-loses.toml`    | Prompt template file (see below) |
 | `--temperature` | `JEV_TEMPERATURE` | `0`                         | `0` plays Jev's most likely move; above 0, samples moves with weight p^(1/T) (`1` = Jev's own probabilities) |
 
+`jev-latest` is an alias that moves to each new Jev release. The log file
+records the versioned model that answered each move (e.g. `jev-1.13.0`), and
+tournaments record it in `run.json`. To compare against an older release, pass
+its versioned ID with `--model`.
+
 Additional flags:
 
 - `--random` plays uniformly random legal moves without calling Jev (a

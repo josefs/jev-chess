@@ -352,6 +352,17 @@ def rating_report(config):
     return "\n".join(lines) + "\n" if lines else ""
 
 
+def jev_models(run):
+    """Returns the versioned Jev model IDs that answered, from the engine logs."""
+    found = set()
+    for log in run.glob("*.log"):
+        with open(log, errors="replace") as f:
+            for line in f:
+                if m := re.search(r"jev \(([^)]+)\) top moves", line):
+                    found.add(m[1])
+    return sorted(found)
+
+
 def git_commit():
     """Returns HEAD's hash, with "-dirty" if tracked files have local changes."""
     try:
@@ -426,9 +437,11 @@ def archive(run):
             "temperature": float(opt("--temperature")) if opt("--temperature") else None,
         })
     tc = config["engines"][0]["limit"]["tc"]
+    models = jev_models(run)
     run_info = {
         "started": started.isoformat(timespec="seconds"),
         "commit": commit,
+        "jev_models": models,
         "engines": engines,
         "settings": {
             "rounds": config["rounds"],
@@ -455,7 +468,8 @@ def archive(run):
         names = ", ".join(e["name"] for e in engines)
         rows = "".join(l for l in table.splitlines(keepends=True) if not re.match(r"^-+$", l.strip()))
         index.write_text(text.rstrip("\n") + f"\n\n{heading}\n\n"
-                         f"Engines: {names}. Commit {commit}.\n\n"
+                         f"Engines: {names}. Commit {commit}. "
+                         f"Jev: {', '.join(models) or 'version not recorded'}.\n\n"
                          f"```\n{rows.strip(chr(10))}\n```\n\n"
                          + (f"Estimated ratings:\n\n```\n{ratings}```\n\n" if ratings else "") +
                          f"Notes: TODO\n")
@@ -471,7 +485,8 @@ Every tournament run with `tournament.py`, oldest first. Each directory holds:
   each prompt engine.
 - `prompts/`: the exact prompt files that played.
 - `run.json`: engines, temperatures, settings, the commit the engine was built
-  from, and per-pairing win/draw/loss counts.
+  from, the Jev model versions that answered, and per-pairing win/draw/loss
+  counts.
 - `games.pgn.gz`: every game (`gunzip -k` to read it).
 
 The per-engine logs with every prompt and Jev reply are left out because they

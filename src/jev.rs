@@ -37,6 +37,9 @@ struct Question<'a> {
 
 #[derive(Deserialize)]
 struct Response {
+    /// The versioned model ID that answered, e.g. "jev-1.13.0" for "jev-latest".
+    #[serde(default)]
+    model: Option<String>,
     answers: BTreeMap<String, Answer>,
 }
 
@@ -51,6 +54,8 @@ struct Answer {
 #[derive(Debug)]
 pub struct Decision {
     pub choice: String,
+    /// The versioned model ID reported by the API, if any.
+    pub model: Option<String>,
     pub probabilities: BTreeMap<String, f64>,
 }
 
@@ -118,6 +123,7 @@ impl JevClient {
 
         Ok(Decision {
             choice,
+            model: parsed.model,
             probabilities: answer.probabilities,
         })
     }

@@ -7,11 +7,17 @@ Every tournament run with `tournament.py`, oldest first. Each directory holds:
   each prompt engine.
 - `prompts/`: the exact prompt files that played.
 - `run.json`: engines, temperatures, settings, the commit the engine was built
-  from, and per-pairing win/draw/loss counts.
+  from, the Jev model versions that answered, and per-pairing win/draw/loss
+  counts.
 - `games.pgn.gz`: every game (`gunzip -k` to read it).
 
 The per-engine logs with every prompt and Jev reply are left out because they
 are large; they stay in `results/` (not committed).
+
+Jev version: runs up to and including 20261004-131810 used `jev-latest`, which
+pointed to `jev-1.13.0` at the time according to TypeSafe's models page. The
+engine did not record the version the API reported until later; entries from
+then on list it after "Jev:".
 
 ## 20261003-205141
 
