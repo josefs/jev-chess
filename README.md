@@ -148,6 +148,32 @@ so far. Replace its `Notes: TODO` with what the run tested and showed, then
 commit. Use `--no-archive` to skip this, or `./tournament.py --archive
 results/<timestamp>` to archive an earlier run.
 
+### Rating against anchors
+
+The Elo figures in a round-robin only compare the prompts with each other. To
+estimate how strong the bot actually is, play a gauntlet against engines of
+known strength with `--anchors`:
+
+```sh
+brew install stockfish lc0   # once
+./tournament.py prompts/threat-loses.toml --anchors maia1100,maia1300,maia1500,sf1320
+```
+
+- `maiaN` (N = 1100, 1200, …, 1900) is [Maia](https://maiachess.com), a neural
+  network trained to play like Lichess players rated N, run by lc0 at one node
+  per move. The weights are downloaded to `tools/maia/` on first use.
+- `sfN` (N = 1320–3190) is Stockfish limited with `UCI_Elo=N`, which is
+  calibrated against CCRL Blitz ratings. These anchors always play at 120+1,
+  the time control of that calibration.
+
+Each prompt engine plays every anchor, and the anchors don't play each other.
+At the end the script estimates each prompt engine's rating (maximum
+likelihood, with a 95% interval) and saves it in `ratings.txt`. It gives a
+separate figure for the Maia and the Stockfish anchors, because Lichess and
+CCRL ratings are different scales. Pick anchors either side of the bot's
+strength: if it wins or loses every game, the script can only report a bound
+such as `< 1100`.
+
 Every Jev engine makes one API call per move, so a 10-round match between two
 prompts costs about 20 games × ~40 calls per side.
 

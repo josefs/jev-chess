@@ -3,6 +3,8 @@
 Every tournament run with `tournament.py`, oldest first. Each directory holds:
 
 - `summary.txt`: the final fastchess table.
+- `ratings.txt`: for gauntlets against `--anchors`, the estimated rating of
+  each prompt engine.
 - `prompts/`: the exact prompt files that played.
 - `run.json`: engines, temperatures, settings, the commit the engine was built
   from, and per-pairing win/draw/loss counts.

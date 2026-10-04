@@ -10,6 +10,12 @@ Examples:
     ./tournament.py prompts/a.toml prompts/b.toml prompts/c.toml --rounds 20
     ./tournament.py prompts/a.toml prompts/a.toml@0.5 prompts/b.toml --temperature 0.3
     ./tournament.py --archive results/20261003-223135
+    ./tournament.py prompts/threat-loses.toml --anchors maia1100,maia1300,maia1500,sf1320
+
+With --anchors, the prompt engines instead play a gauntlet against engines of
+known strength (Stockfish limited with UCI_Elo, or the human-like Maia networks
+run by lc0), and the script estimates each prompt engine's rating from the
+results.
 
 A finished tournament is also archived to tournaments/<timestamp>/ (final table,
 prompt files, settings, commit and compressed PGN, but not the large per-engine
@@ -23,6 +29,7 @@ import argparse
 import datetime
 import gzip
 import json
+import math
 import os
 import platform
 import re
@@ -36,6 +43,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 ARCHIVE = ROOT / "tournaments"
+MAIA_URL = "https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-{}.pb.gz"
+MAIA_LEVELS = range(1100, 2000, 100)
+# Stockfish's UCI_Elo is calibrated against CCRL Blitz (2'+1"), so anchors play at that.
+STOCKFISH_TC = "120+1"
+ANCHOR = re.compile(r"^(sf|maia)(\d+)$")
+SCALES = {"sf": "Stockfish UCI_Elo (CCRL Blitz)", "maia": "Maia (Lichess)"}
 FASTCHESS_VERSION = "v1.8.2-alpha"
 FASTCHESS_ASSETS = {
     ("Darwin", "arm64"): "fastchess-mac-arm64.tar",
@@ -84,6 +97,44 @@ def fastchess_path(explicit):
     return exe_path
 
 
+def maia_weights(level):
+    path = ROOT / "tools" / "maia" / f"maia-{level}.pb.gz"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        print(f"Downloading {MAIA_URL.format(level)}")
+        urllib.request.urlretrieve(MAIA_URL.format(level), path)
+    return path
+
+
+def anchor_engines(specs, args):
+    """Returns fastchess -engine arguments for anchors such as sf1500 or maia1100."""
+    engines = []
+    for spec in specs:
+        m = ANCHOR.match(spec)
+        if not m:
+            die(f"unknown anchor {spec!r}; use sfN (N = 1320..3190) or maiaN (N = 1100..1900)")
+        kind, level = m[1], int(m[2])
+        if kind == "sf":
+            if not 1320 <= level <= 3190:
+                die(f"{spec}: Stockfish UCI_Elo must be between 1320 and 3190")
+            exe = args.stockfish or shutil.which("stockfish")
+            if not exe:
+                die("stockfish not found; install it (e.g. `brew install stockfish`) or pass --stockfish")
+            engines.append([f"name={spec}", f"cmd={exe}", f"tc={STOCKFISH_TC}",
+                            "option.UCI_LimitStrength=true", f"option.UCI_Elo={level}",
+                            "option.Threads=1", "option.Hash=16"])
+        else:
+            if level not in MAIA_LEVELS:
+                die(f"{spec}: Maia levels are 1100, 1200, ..., 1900")
+            exe = args.lc0 or shutil.which("lc0")
+            if not exe:
+                die("lc0 not found; install it (e.g. `brew install lc0`) or pass --lc0")
+            # Maia plays at its rating when it searches a single node.
+            engines.append([f"name={spec}", f"cmd={exe}", f"tc={args.tc}", "nodes=1",
+                            f"option.WeightsFile={maia_weights(level)}", "option.Threads=1"])
+    return engines
+
+
 def build_engine(skip):
     binary = ROOT / "target" / "release" / ("jev-chess.exe" if os.name == "nt" else "jev-chess")
     if not skip:
@@ -126,6 +177,12 @@ def main():
     p.add_argument("--api-url", help="Jev endpoint for all engines")
     p.add_argument("--fastchess", help="path to a fastchess binary (default: download it)")
     p.add_argument("--no-build", action="store_true", help="don't run cargo build first")
+    p.add_argument("--anchors", type=lambda v: [a for a in v.split(",") if a], default=[],
+                   help="play a gauntlet against these reference engines instead of a "
+                        "round-robin, e.g. maia1100,maia1500,sf1320 (sfN: Stockfish at "
+                        "UCI_Elo N, 1320-3190; maiaN: Maia N, 1100-1900)")
+    p.add_argument("--stockfish", help="path to stockfish (default: from PATH)")
+    p.add_argument("--lc0", help="path to lc0, used for Maia (default: from PATH)")
     p.add_argument("--no-archive", action="store_true",
                    help="don't copy the finished tournament to tournaments/")
     p.add_argument("--archive", type=Path, metavar="RUN_DIR",
@@ -155,9 +212,12 @@ def main():
                                "--temperature", str(temperature)]))
     if args.random:
         engines.append(("random", ["--random"]))
-    names = [n for n, _ in engines]
-    if len(engines) < 2:
-        die("need at least two engines (give two prompt files, or one plus --random)")
+    anchors = anchor_engines(args.anchors, args)
+    names = [n for n, _ in engines] + args.anchors
+    if args.anchors and not engines:
+        die("give at least one prompt file (or --random) to play the anchors")
+    if len(names) < 2:
+        die("need at least two engines (give two prompt files, or one plus --random or --anchors)")
     if len(set(names)) != len(names):
         die(f"engine names must be unique (they come from the file names and @T): {names}")
 
@@ -190,7 +250,8 @@ def main():
 
     cmd = [
         str(fastchess),
-        "-tournament", "roundrobin",
+        *(["-tournament", "gauntlet", "-seeds", str(len(engines))] if anchors
+          else ["-tournament", "roundrobin"]),
         "-rounds", str(args.rounds),
         "-repeat",
         "-concurrency", str(args.concurrency),
@@ -199,13 +260,16 @@ def main():
         "-pgnout", f"file={out / 'games.pgn'}",
         "-log", f"file={out / 'fastchess.log'}", "level=warn",
         "-recover",
-        "-each", f"cmd={binary}", "proto=uci", f"tc={args.tc}",
+        "-each", "proto=uci",
     ]
     if args.seed is not None:
         cmd += ["-srand", str(args.seed)]
     for name, engine_args in engines:
         engine_args = engine_args + ["--log-file", str(out / f"{name}.log")]
-        cmd += ["-engine", f"name={name}", f"args={' '.join(engine_args)}"]
+        cmd += ["-engine", f"name={name}", f"cmd={binary}", f"tc={args.tc}",
+                f"args={' '.join(engine_args)}"]
+    for anchor in anchors:
+        cmd += ["-engine", *anchor]
 
     (out / "command.txt").write_text(" ".join(cmd) + "\n")
     print(f"Engines: {', '.join(names)}")
@@ -232,9 +296,60 @@ def main():
     if table:
         (out / "summary.txt").write_text(table)
         print(f"\n=== Final results ({out / 'summary.txt'}) ===\n{table}", end="")
+    config_file = out / "config.json"
+    if anchors and config_file.is_file():
+        ratings = rating_report(json.loads(config_file.read_text()))
+        (out / "ratings.txt").write_text(ratings)
+        print(f"\n=== Estimated ratings ({out / 'ratings.txt'}) ===\n{ratings}", end="")
     if status == 0 and not args.no_archive and any(l.startswith("Finished match") for l in lines):
         archive(out)
     return status
+
+
+def expected(r, opponent):
+    return 1 / (1 + 10 ** ((opponent - r) / 400))
+
+
+def estimate(results):
+    """Maximum-likelihood rating from [(anchor rating, points, games)], with a 95% interval.
+
+    Returns (rating, margin), or (None, text) when every game was won or lost."""
+    points = sum(p for _, p, _ in results)
+    games = sum(n for _, _, n in results)
+    if points == 0:
+        return None, f"< {min(r for r, _, _ in results)}"
+    if points == games:
+        return None, f"> {max(r for r, _, _ in results)}"
+    lo, hi = -2000.0, 6000.0
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if sum(n * expected(mid, r) for r, _, n in results) < points:
+            lo = mid
+        else:
+            hi = mid
+    info = sum(n * expected(lo, r) * (1 - expected(lo, r)) for r, _, n in results)
+    return lo, 1.96 * 400 / math.log(10) / math.sqrt(info)
+
+
+def rating_report(config):
+    """Estimates every non-anchor engine's rating on each anchor scale used."""
+    per = {}  # (engine, scale) -> [(anchor rating, points, games, anchor name)]
+    for pair, st in config.get("stats", {}).items():
+        a, b = pair.split(" vs ")
+        games = st["wins"] + st["losses"] + st["draws"]
+        for me, other, won, lost in [(a, b, st["wins"], st["losses"]),
+                                     (b, a, st["losses"], st["wins"])]:
+            m = ANCHOR.match(other)
+            if m and not ANCHOR.match(me) and games:
+                per.setdefault((me, m[1]), []).append(
+                    (int(m[2]), won + st["draws"] / 2, games, other))
+    lines = []
+    for (engine, scale), results in sorted(per.items()):
+        rating, margin = estimate([r[:3] for r in results])
+        value = f"{rating:.0f} +/- {margin:.0f}" if rating is not None else margin
+        detail = ", ".join(f"{p:g}/{n} vs {name}" for _, p, n, name in sorted(results))
+        lines.append(f"{engine:24} {value:>14}  on {SCALES[scale]} scale ({detail})")
+    return "\n".join(lines) + "\n" if lines else ""
 
 
 def git_commit():
@@ -291,6 +406,16 @@ def archive(run):
 
     engines = []
     for e in config["engines"]:
+        if ANCHOR.match(e["name"]):
+            engines.append({
+                "name": e["name"],
+                "anchor": Path(e["cmd"]).name,
+                "options": e.get("options", []),
+                "nodes": e["limit"]["nodes"] or None,
+                "time_control": f"{e['limit']['tc']['time'] / 1000:g}+"
+                                f"{e['limit']['tc']['increment'] / 1000:g}",
+            })
+            continue
         words = e["args"].split()
         opt = lambda flag: words[words.index(flag) + 1] if flag in words else None
         prompt = opt("--prompt")
@@ -315,6 +440,10 @@ def archive(run):
         },
         "pairs": config.get("stats", {}),
     }
+    ratings = rating_report(config)
+    if ratings:
+        run_info["ratings"] = ratings.splitlines()
+        (dest / "ratings.txt").write_text(ratings)
     (dest / "run.json").write_text(json.dumps(run_info, indent=2) + "\n")
 
     index = ARCHIVE / "README.md"
@@ -328,6 +457,7 @@ def archive(run):
         index.write_text(text.rstrip("\n") + f"\n\n{heading}\n\n"
                          f"Engines: {names}. Commit {commit}.\n\n"
                          f"```\n{rows.strip(chr(10))}\n```\n\n"
+                         + (f"Estimated ratings:\n\n```\n{ratings}```\n\n" if ratings else "") +
                          f"Notes: TODO\n")
     print(f"Archived to {dest.relative_to(ROOT)}; add notes to {index.relative_to(ROOT)}")
 
@@ -337,6 +467,8 @@ INDEX_HEADER = """# Tournament log
 Every tournament run with `tournament.py`, oldest first. Each directory holds:
 
 - `summary.txt`: the final fastchess table.
+- `ratings.txt`: for gauntlets against `--anchors`, the estimated rating of
+  each prompt engine.
 - `prompts/`: the exact prompt files that played.
 - `run.json`: engines, temperatures, settings, the commit the engine was built
   from, and per-pairing win/draw/loss counts.
