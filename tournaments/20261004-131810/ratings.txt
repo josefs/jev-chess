@@ -1,0 +1,2 @@
+threat-loses                942 +/- 195  on Maia (Lichess) scale (1.5/10 vs maia1100, 2.5/10 vs maia1300)
+threat-loses                     < 1320  on Stockfish UCI_Elo (CCRL Blitz) scale (0/10 vs sf1320)

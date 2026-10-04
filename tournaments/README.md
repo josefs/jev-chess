@@ -143,3 +143,31 @@ Question: does rewording the threat warning fix it? Yes: all three rewordings
 beat mate-exchange, and avoidable mate-in-one blunders fell from about 15 to
 1-3 per engine. threat-loses ("Black loses: White can end the game next move")
 was best and became the built-in default in 9b6755a.
+
+## 20261004-131810
+
+Engines: threat-loses, maia1100, maia1300, sf1320. Commit 38dcda9.
+
+```
+Rank Name                             Elo        +/-       nElo        +/-      Games      Score       Draw           Ptnml(0-2)
+   1 sf1320                           inf        nan        inf        nan         10     100.0%       0.0%      [0, 0, 0, 0, 5]
+   2 maia1100                      301.33        nan     429.93     215.34         10      85.0%      20.0%      [0, 0, 1, 1, 3]
+   3 maia1300                      190.85     140.99     388.44     215.34         10      75.0%      20.0%      [0, 0, 1, 3, 1]
+   4 threat-loses                 -325.17     162.73    -501.83     124.33         30      13.3%      13.3%      [9, 4, 2, 0, 0]
+```
+
+Estimated ratings:
+
+```
+threat-loses                942 +/- 195  on Maia (Lichess) scale (1.5/10 vs maia1100, 2.5/10 vs maia1300)
+threat-loses                     < 1320  on Stockfish UCI_Elo (CCRL Blitz) scale (0/10 vs sf1320)
+```
+
+Question: how strong is the default prompt (threat-loses) in absolute terms?
+Gauntlet against Maia 1100, Maia 1300 and Stockfish at UCI_Elo 1320, 10 games
+each. Estimated about 940 +/- 195 on the Maia (Lichess) scale. It lost all 10
+games to Stockfish 1320, so on the CCRL scale it is only known to be below 1320.
+The 2.5/10 against Maia 1300 vs 1.5/10 against Maia 1100 is noise. Almost every
+loss was a mate after falling behind in material, usually already by move 20,
+so losing material in the middlegame, rather than blundering into mate, is now
+the main weakness.
