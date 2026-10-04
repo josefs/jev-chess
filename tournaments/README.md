@@ -15,9 +15,10 @@ The per-engine logs with every prompt and Jev reply are left out because they
 are large; they stay in `results/` (not committed).
 
 Jev version: runs up to and including 20261004-131810 used `jev-latest`, which
-pointed to `jev-1.13.0` at the time according to TypeSafe's models page. The
-engine did not record the version the API reported until later; entries from
-then on list it after "Jev:".
+pointed to `jev-1.13.0` at the time: TypeSafe's models page listed it as the
+only release, and the API reported `jev-1.13.0` for `jev-latest` on
+2026-10-04 at 13:49. The engine did not record the version per move until
+later; entries from then on list it after "Jev:".
 
 ## 20261003-205141
 
