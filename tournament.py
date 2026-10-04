@@ -9,6 +9,11 @@ Examples:
     ./tournament.py prompts/baseline.toml --random
     ./tournament.py prompts/a.toml prompts/b.toml prompts/c.toml --rounds 20
     ./tournament.py prompts/a.toml prompts/a.toml@0.5 prompts/b.toml --temperature 0.3
+    ./tournament.py --archive results/20261003-223135
+
+A finished tournament is also archived to tournaments/<timestamp>/ (final table,
+prompt files, settings, commit and compressed PGN, but not the large per-engine
+logs) and listed in tournaments/README.md, so the record can be committed.
 
 The Jev API key is taken from JEV_API_KEY (or --api-key) and passed to the
 engines through the environment, so it never appears in logs or PGNs.
@@ -16,8 +21,11 @@ engines through the environment, so it never appears in logs or PGNs.
 
 import argparse
 import datetime
+import gzip
+import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +35,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+ARCHIVE = ROOT / "tournaments"
 FASTCHESS_VERSION = "v1.8.2-alpha"
 FASTCHESS_ASSETS = {
     ("Darwin", "arm64"): "fastchess-mac-arm64.tar",
@@ -117,7 +126,15 @@ def main():
     p.add_argument("--api-url", help="Jev endpoint for all engines")
     p.add_argument("--fastchess", help="path to a fastchess binary (default: download it)")
     p.add_argument("--no-build", action="store_true", help="don't run cargo build first")
+    p.add_argument("--no-archive", action="store_true",
+                   help="don't copy the finished tournament to tournaments/")
+    p.add_argument("--archive", type=Path, metavar="RUN_DIR",
+                   help="only archive an existing results directory, then exit")
     args = p.parse_args()
+
+    if args.archive:
+        archive(args.archive.resolve())
+        return 0
 
     engines = []  # (name, engine args)
     prompts = []
@@ -169,6 +186,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     for prompt in set(prompts):
         shutil.copy(prompt, out / f"{prompt.stem}.toml")
+    (out / "commit.txt").write_text(git_commit() + "\n")
 
     cmd = [
         str(fastchess),
@@ -214,7 +232,119 @@ def main():
     if table:
         (out / "summary.txt").write_text(table)
         print(f"\n=== Final results ({out / 'summary.txt'}) ===\n{table}", end="")
+    if status == 0 and not args.no_archive and any(l.startswith("Finished match") for l in lines):
+        archive(out)
     return status
+
+
+def git_commit():
+    """Returns HEAD's hash, with "-dirty" if tracked files have local changes."""
+    try:
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
+                              capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "diff", "--quiet", "HEAD"], cwd=ROOT).returncode != 0
+        return head + ("-dirty" if dirty else "")
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def commit_at(when):
+    """Best guess at the commit checked out at `when`: the last one made before it."""
+    out = subprocess.run(["git", "log", "--format=%h %ct", f"--until={when.isoformat()}", "-1"],
+                         cwd=ROOT, capture_output=True, text=True).stdout.split()
+    return f"{out[0]} (inferred from the run time)" if out else "unknown"
+
+
+def archive(run):
+    """Copies the parts of a results directory worth keeping to tournaments/<name>/."""
+    config_file = run / "config.json"
+    if not config_file.is_file():
+        die(f"{config_file} not found; is {run} a tournament results directory?")
+    config = json.loads(config_file.read_text())
+
+    table = ""
+    for name in ["output.txt", "summary.txt"]:
+        if (run / name).is_file():
+            table = last_table((run / name).read_text().splitlines(keepends=True))
+            if table:
+                break
+    if not table:
+        die(f"no results table in {run}")
+
+    dest = ARCHIVE / run.name
+    if dest.exists():
+        shutil.rmtree(dest)
+    (dest / "prompts").mkdir(parents=True)
+    (dest / "summary.txt").write_text(table)
+    for prompt in sorted(run.glob("*.toml")):
+        shutil.copy(prompt, dest / "prompts" / prompt.name)
+    with open(run / "games.pgn", "rb") as src, \
+            gzip.GzipFile(dest / "games.pgn.gz", "wb", mtime=0) as gz:
+        shutil.copyfileobj(src, gz)
+
+    try:
+        started = datetime.datetime.strptime(run.name, "%Y%m%d-%H%M%S")
+    except ValueError:
+        started = datetime.datetime.fromtimestamp(config_file.stat().st_ctime)
+    commit_file = run / "commit.txt"
+    commit = commit_file.read_text().strip() if commit_file.is_file() else commit_at(started)
+
+    engines = []
+    for e in config["engines"]:
+        words = e["args"].split()
+        opt = lambda flag: words[words.index(flag) + 1] if flag in words else None
+        prompt = opt("--prompt")
+        engines.append({
+            "name": e["name"],
+            "prompt": f"prompts/{Path(prompt).name}" if prompt else None,
+            "random": "--random" in words,
+            "temperature": float(opt("--temperature")) if opt("--temperature") else None,
+        })
+    tc = config["engines"][0]["limit"]["tc"]
+    run_info = {
+        "started": started.isoformat(timespec="seconds"),
+        "commit": commit,
+        "engines": engines,
+        "settings": {
+            "rounds": config["rounds"],
+            "games_per_opening": config["games"],
+            "time_control": f"{tc['time'] / 1000:g}+{tc['increment'] / 1000:g}",
+            "maxmoves": config["maxmoves"]["move_count"] if config["maxmoves"]["enabled"] else None,
+            "openings": Path(config["opening"]["file"]).name,
+            "seed": config["seed"],
+        },
+        "pairs": config.get("stats", {}),
+    }
+    (dest / "run.json").write_text(json.dumps(run_info, indent=2) + "\n")
+
+    index = ARCHIVE / "README.md"
+    if not index.exists():
+        index.write_text(INDEX_HEADER)
+    text = index.read_text()
+    heading = f"## {run.name}"
+    if heading not in text:
+        names = ", ".join(e["name"] for e in engines)
+        rows = "".join(l for l in table.splitlines(keepends=True) if not re.match(r"^-+$", l.strip()))
+        index.write_text(text.rstrip("\n") + f"\n\n{heading}\n\n"
+                         f"Engines: {names}. Commit {commit}.\n\n"
+                         f"```\n{rows.strip(chr(10))}\n```\n\n"
+                         f"Notes: TODO\n")
+    print(f"Archived to {dest.relative_to(ROOT)}; add notes to {index.relative_to(ROOT)}")
+
+
+INDEX_HEADER = """# Tournament log
+
+Every tournament run with `tournament.py`, oldest first. Each directory holds:
+
+- `summary.txt`: the final fastchess table.
+- `prompts/`: the exact prompt files that played.
+- `run.json`: engines, temperatures, settings, the commit the engine was built
+  from, and per-pairing win/draw/loss counts.
+- `games.pgn.gz`: every game (`gunzip -k` to read it).
+
+The per-engine logs with every prompt and Jev reply are left out because they
+are large; they stay in `results/` (not committed).
+"""
 
 
 def last_table(lines):

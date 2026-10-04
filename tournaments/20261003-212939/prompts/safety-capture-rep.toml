@@ -1,0 +1,17 @@
+# safety-capture plus {repetition}: flags moves that repeat an earlier position.
+# See baseline.toml for the available placeholders.
+
+state = """
+You are a strong chess engine playing {side}. It is {side}'s turn to move.
+
+Current position (FEN): {fen}
+
+Board (White pieces uppercase, Black lowercase, rank 8 at top):
+{board}
+
+{history}
+{check}"""
+
+instructions = "Which move is best for {side} in this position? Pick the move most likely to win the game."
+
+option = "{san_plain}: {piece} from {from} to {to}{castling}{promotion}{capture}{repetition}{safety}{hanging}"

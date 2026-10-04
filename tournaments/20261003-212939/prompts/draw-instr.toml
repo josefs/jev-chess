@@ -1,0 +1,19 @@
+# safety-capture-rep plus instructions that treat a draw as a poor result
+# unless the side to move is losing. Jev has to judge who is ahead from the
+# board itself; compare with draw-instr-balance.toml.
+# See baseline.toml for the available placeholders.
+
+state = """
+You are a strong chess engine playing {side}. It is {side}'s turn to move.
+
+Current position (FEN): {fen}
+
+Board (White pieces uppercase, Black lowercase, rank 8 at top):
+{board}
+
+{history}
+{check}"""
+
+instructions = "Which move is best for {side} in this position? Pick the move most likely to win the game. A draw (by repetition, stalemate or otherwise) is a poor result for {side} unless {side} is behind; when {side} is ahead or level, avoid moves that repeat a position."
+
+option = "{san_plain}: {piece} from {from} to {to}{castling}{promotion}{capture}{repetition}{safety}{hanging}"

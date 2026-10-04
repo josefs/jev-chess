@@ -1,0 +1,67 @@
+{
+  "started": "2026-10-03T21:16:57",
+  "commit": "4d9f562 (inferred from the run time)",
+  "engines": [
+    {
+      "name": "safety-capture",
+      "prompt": "prompts/safety-capture.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "safety-capture-rep",
+      "prompt": "prompts/safety-capture-rep.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "safety-capture@0.5",
+      "prompt": "prompts/safety-capture.toml",
+      "random": false,
+      "temperature": 0.5
+    }
+  ],
+  "settings": {
+    "rounds": 10,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 6694395434151714171
+  },
+  "pairs": {
+    "safety-capture-rep vs safety-capture@0.5": {
+      "wins": 5,
+      "losses": 4,
+      "draws": 11,
+      "penta_WW": 1,
+      "penta_WD": 2,
+      "penta_WL": 1,
+      "penta_DD": 3,
+      "penta_LD": 3,
+      "penta_LL": 0
+    },
+    "safety-capture vs safety-capture@0.5": {
+      "wins": 3,
+      "losses": 1,
+      "draws": 16,
+      "penta_WW": 0,
+      "penta_WD": 3,
+      "penta_WL": 0,
+      "penta_DD": 6,
+      "penta_LD": 1,
+      "penta_LL": 0
+    },
+    "safety-capture vs safety-capture-rep": {
+      "wins": 3,
+      "losses": 7,
+      "draws": 10,
+      "penta_WW": 0,
+      "penta_WD": 2,
+      "penta_WL": 1,
+      "penta_DD": 2,
+      "penta_LD": 4,
+      "penta_LL": 1
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "started": "2026-10-03T20:58:21",
+  "commit": "4ef4684 (inferred from the run time)",
+  "engines": [
+    {
+      "name": "baseline",
+      "prompt": "prompts/baseline.toml",
+      "random": false,
+      "temperature": null
+    },
+    {
+      "name": "safety-only",
+      "prompt": "prompts/safety-only.toml",
+      "random": false,
+      "temperature": null
+    },
+    {
+      "name": "annotated",
+      "prompt": "prompts/annotated.toml",
+      "random": false,
+      "temperature": null
+    }
+  ],
+  "settings": {
+    "rounds": 10,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 3380856891233778205
+  },
+  "pairs": {
+    "safety-only vs annotated": {
+      "wins": 7,
+      "losses": 2,
+      "draws": 11,
+      "penta_WW": 0,
+      "penta_WD": 6,
+      "penta_WL": 1,
+      "penta_DD": 2,
+      "penta_LD": 1,
+      "penta_LL": 0
+    },
+    "baseline vs annotated": {
+      "wins": 0,
+      "losses": 8,
+      "draws": 12,
+      "penta_WW": 0,
+      "penta_WD": 0,
+      "penta_WL": 0,
+      "penta_DD": 4,
+      "penta_LD": 4,
+      "penta_LL": 2
+    },
+    "baseline vs safety-only": {
+      "wins": 0,
+      "losses": 11,
+      "draws": 9,
+      "penta_WW": 0,
+      "penta_WD": 0,
+      "penta_WL": 0,
+      "penta_DD": 1,
+      "penta_LD": 7,
+      "penta_LL": 2
+    }
+  }
+}

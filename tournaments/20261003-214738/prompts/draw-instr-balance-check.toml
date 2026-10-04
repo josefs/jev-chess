@@ -1,0 +1,20 @@
+# draw-instr-balance plus {gives_check}: flags checks as well as checkmate and
+# stalemate (compare with draw-instr-balance-mate, which leaves checks unlabelled).
+# See baseline.toml for the available placeholders.
+
+state = """
+You are a strong chess engine playing {side}. It is {side}'s turn to move.
+
+Current position (FEN): {fen}
+
+Board (White pieces uppercase, Black lowercase, rank 8 at top):
+{board}
+
+{balance}
+
+{history}
+{check}"""
+
+instructions = "Which move is best for {side} in this position? Pick the move most likely to win the game. A draw (by repetition, stalemate or otherwise) is a poor result for {side} unless {side} is behind; when {side} is ahead or level, avoid moves that repeat a position."
+
+option = "{san_plain}: {piece} from {from} to {to}{castling}{promotion}{capture}{gives_check}{repetition}{safety}{hanging}"

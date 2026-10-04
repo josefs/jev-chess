@@ -153,6 +153,15 @@ Results go to `results/<timestamp>/`:
 - one log per engine, with Jev's ranked moves
 - copies of the prompts used
 
+`results/` is not committed (the engine logs are large). When a match finishes,
+the parts worth keeping are copied to `tournaments/<timestamp>/`: the final
+table, the prompt files, the settings and commit (`run.json`), and the games as
+`games.pgn.gz`. An entry is also added to
+[`tournaments/README.md`](tournaments/README.md), the log of every tournament
+so far. Replace its `Notes: TODO` with what the run tested and showed, then
+commit. Use `--no-archive` to skip this, or `./tournament.py --archive
+results/<timestamp>` to archive an earlier run.
+
 Every Jev engine makes one API call per move, so a 10-round match between two
 prompts costs about 20 games × ~40 calls per side.
 

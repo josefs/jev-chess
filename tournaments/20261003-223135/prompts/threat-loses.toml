@@ -1,0 +1,23 @@
+# mate-threat-exchange with the threat label reworded (names who loses),
+# avoiding the word "checkmate", which Jev seems to find attractive.
+# See baseline.toml for the available placeholders.
+
+state = """
+You are a strong chess engine playing {side}. It is {side}'s turn to move.
+
+Current position (FEN): {fen}
+
+Board (White pieces uppercase, Black lowercase, rank 8 at top):
+{board}
+
+{balance}
+
+{history}
+{check}"""
+
+instructions = "Which move is best for {side} in this position? Pick the move most likely to win the game. A draw (by repetition, stalemate or otherwise) is a poor result for {side} unless {side} is behind; when {side} is ahead or level, avoid moves that repeat a position."
+
+option = "{san_plain}: {piece} from {from} to {to}{castling}{promotion}{capture}{exchange}{mate}{threat}{repetition}{safety}{hanging}"
+
+[labels]
+threat = "{side} loses: {opponent} can end the game next move"

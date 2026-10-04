@@ -1,0 +1,67 @@
+{
+  "started": "2026-10-03T21:47:38",
+  "commit": "cf2ad2f (inferred from the run time)",
+  "engines": [
+    {
+      "name": "draw-instr-balance",
+      "prompt": "prompts/draw-instr-balance.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "draw-instr-balance-mate",
+      "prompt": "prompts/draw-instr-balance-mate.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "draw-instr-balance-check",
+      "prompt": "prompts/draw-instr-balance-check.toml",
+      "random": false,
+      "temperature": 0.0
+    }
+  ],
+  "settings": {
+    "rounds": 10,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 8630114737617321869
+  },
+  "pairs": {
+    "draw-instr-balance-mate vs draw-instr-balance-check": {
+      "wins": 8,
+      "losses": 6,
+      "draws": 6,
+      "penta_WW": 2,
+      "penta_WD": 3,
+      "penta_WL": 1,
+      "penta_DD": 0,
+      "penta_LD": 3,
+      "penta_LL": 1
+    },
+    "draw-instr-balance vs draw-instr-balance-check": {
+      "wins": 6,
+      "losses": 8,
+      "draws": 6,
+      "penta_WW": 0,
+      "penta_WD": 2,
+      "penta_WL": 4,
+      "penta_DD": 0,
+      "penta_LD": 4,
+      "penta_LL": 0
+    },
+    "draw-instr-balance vs draw-instr-balance-mate": {
+      "wins": 3,
+      "losses": 11,
+      "draws": 6,
+      "penta_WW": 0,
+      "penta_WD": 0,
+      "penta_WL": 3,
+      "penta_DD": 1,
+      "penta_LD": 4,
+      "penta_LL": 2
+    }
+  }
+}

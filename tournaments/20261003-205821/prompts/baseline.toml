@@ -1,0 +1,54 @@
+# Baseline prompt: the engine's built-in default.
+#
+# Placeholders available in `state` and `instructions`:
+#   {side}      side to move ("White" / "Black")
+#   {opponent}  the other side
+#   {fen}       current position as FEN
+#   {board}     ASCII board, rank 8 at top, White uppercase
+#   {moves}     moves played so far in SAN, or "(none)"
+#   {history}   "No moves have been played yet." or "Moves so far: ..." (with
+#               the starting FEN if the game did not start from the initial position)
+#   {check}     "<side> is in check." or empty
+#
+# Placeholders available in `option` (one per legal move):
+#   {uci}       move in UCI notation, e.g. e2e4 (this is also the option key)
+#   {san}       move in SAN, e.g. Nf3, exd5, O-O
+#   {piece}     moving piece: pawn, knight, bishop, rook, queen, king
+#   {from} {to} squares (for castling, the king's destination)
+#   {san_plain} SAN without the capture "x", e.g. Nf3, ed5 (SAN never
+#               includes +/#; those come from {gives_check})
+#
+# Facts about the move. Each is either empty or starts with ", ", so they can
+# be appended freely:
+#   {capture}     ", captures knight"
+#   {promotion}   ", promotes to queen"
+#   {castling}    ", castles kingside" / ", castles queenside"
+#   {gives_check} ", gives check" / ", delivers checkmate" / ", stalemates (draw)"
+#   {details}     {capture}{promotion}{castling}{gives_check}
+#
+# Static analysis of the position after the move (one ply, ignores pins/x-rays).
+# A piece counts as exposed when it is attacked and either undefended or
+# attacked by a cheaper piece:
+#   {safety}      ", the queen on g4 is undefended and can be captured by a pawn"
+#                 (about the moved piece; empty if it is safe)
+#   {hanging}     ", leaves rook on b1 and pawn on e4 exposed to capture"
+#                 (the mover's other pieces)
+#   {attacks}     ", attacks rook on a8 and knight on c6" (enemy pieces the
+#                 moved piece attacks, kings excluded)
+#   {material}    ", material after: even" / ", material after: White ahead by 3"
+#                 (pawn 1, knight/bishop 3, rook 5, queen 9)
+
+state = """
+You are a strong chess engine playing {side}. It is {side}'s turn to move.
+
+Current position (FEN): {fen}
+
+Board (White pieces uppercase, Black lowercase, rank 8 at top):
+{board}
+
+{history}
+{check}"""
+
+instructions = "Which move is best for {side} in this position? Pick the move most likely to win the game."
+
+option = "{san}: {piece} from {from} to {to}{details}"

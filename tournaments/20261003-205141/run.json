@@ -1,0 +1,67 @@
+{
+  "started": "2026-10-03T20:51:41",
+  "commit": "4ef4684 (inferred from the run time)",
+  "engines": [
+    {
+      "name": "baseline",
+      "prompt": "prompts/baseline.toml",
+      "random": false,
+      "temperature": null
+    },
+    {
+      "name": "bare",
+      "prompt": "prompts/bare.toml",
+      "random": false,
+      "temperature": null
+    },
+    {
+      "name": "random",
+      "prompt": null,
+      "random": true,
+      "temperature": null
+    }
+  ],
+  "settings": {
+    "rounds": 5,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 18021265436489042601
+  },
+  "pairs": {
+    "bare vs random": {
+      "wins": 1,
+      "losses": 0,
+      "draws": 9,
+      "penta_WW": 0,
+      "penta_WD": 1,
+      "penta_WL": 0,
+      "penta_DD": 4,
+      "penta_LD": 0,
+      "penta_LL": 0
+    },
+    "baseline vs random": {
+      "wins": 8,
+      "losses": 0,
+      "draws": 2,
+      "penta_WW": 3,
+      "penta_WD": 2,
+      "penta_WL": 0,
+      "penta_DD": 0,
+      "penta_LD": 0,
+      "penta_LL": 0
+    },
+    "baseline vs bare": {
+      "wins": 2,
+      "losses": 1,
+      "draws": 7,
+      "penta_WW": 0,
+      "penta_WD": 2,
+      "penta_WL": 0,
+      "penta_DD": 2,
+      "penta_LD": 1,
+      "penta_LL": 0
+    }
+  }
+}

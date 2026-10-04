@@ -1,0 +1,67 @@
+{
+  "started": "2026-10-03T21:29:39",
+  "commit": "6197ec9 (inferred from the run time)",
+  "engines": [
+    {
+      "name": "safety-capture-rep",
+      "prompt": "prompts/safety-capture-rep.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "draw-instr",
+      "prompt": "prompts/draw-instr.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "draw-instr-balance",
+      "prompt": "prompts/draw-instr-balance.toml",
+      "random": false,
+      "temperature": 0.0
+    }
+  ],
+  "settings": {
+    "rounds": 10,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 11090065908143057662
+  },
+  "pairs": {
+    "draw-instr vs draw-instr-balance": {
+      "wins": 1,
+      "losses": 5,
+      "draws": 14,
+      "penta_WW": 0,
+      "penta_WD": 0,
+      "penta_WL": 1,
+      "penta_DD": 5,
+      "penta_LD": 4,
+      "penta_LL": 0
+    },
+    "safety-capture-rep vs draw-instr-balance": {
+      "wins": 5,
+      "losses": 5,
+      "draws": 10,
+      "penta_WW": 1,
+      "penta_WD": 1,
+      "penta_WL": 2,
+      "penta_DD": 4,
+      "penta_LD": 1,
+      "penta_LL": 1
+    },
+    "safety-capture-rep vs draw-instr": {
+      "wins": 4,
+      "losses": 6,
+      "draws": 10,
+      "penta_WW": 0,
+      "penta_WD": 2,
+      "penta_WL": 2,
+      "penta_DD": 3,
+      "penta_LD": 2,
+      "penta_LL": 1
+    }
+  }
+}

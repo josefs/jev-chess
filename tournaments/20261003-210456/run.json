@@ -1,0 +1,106 @@
+{
+  "started": "2026-10-03T21:04:56",
+  "commit": "35dc33a (inferred from the run time)",
+  "engines": [
+    {
+      "name": "safety-only",
+      "prompt": "prompts/safety-only.toml",
+      "random": false,
+      "temperature": null
+    },
+    {
+      "name": "safety-capture",
+      "prompt": "prompts/safety-capture.toml",
+      "random": false,
+      "temperature": null
+    },
+    {
+      "name": "safety-check",
+      "prompt": "prompts/safety-check.toml",
+      "random": false,
+      "temperature": null
+    },
+    {
+      "name": "safety-material",
+      "prompt": "prompts/safety-material.toml",
+      "random": false,
+      "temperature": null
+    }
+  ],
+  "settings": {
+    "rounds": 10,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 1063940808557301611
+  },
+  "pairs": {
+    "safety-check vs safety-material": {
+      "wins": 5,
+      "losses": 1,
+      "draws": 14,
+      "penta_WW": 1,
+      "penta_WD": 3,
+      "penta_WL": 0,
+      "penta_DD": 5,
+      "penta_LD": 1,
+      "penta_LL": 0
+    },
+    "safety-capture vs safety-material": {
+      "wins": 4,
+      "losses": 0,
+      "draws": 16,
+      "penta_WW": 1,
+      "penta_WD": 2,
+      "penta_WL": 0,
+      "penta_DD": 7,
+      "penta_LD": 0,
+      "penta_LL": 0
+    },
+    "safety-only vs safety-material": {
+      "wins": 1,
+      "losses": 2,
+      "draws": 17,
+      "penta_WW": 0,
+      "penta_WD": 1,
+      "penta_WL": 0,
+      "penta_DD": 7,
+      "penta_LD": 2,
+      "penta_LL": 0
+    },
+    "safety-only vs safety-check": {
+      "wins": 2,
+      "losses": 2,
+      "draws": 16,
+      "penta_WW": 0,
+      "penta_WD": 2,
+      "penta_WL": 0,
+      "penta_DD": 6,
+      "penta_LD": 2,
+      "penta_LL": 0
+    },
+    "safety-capture vs safety-check": {
+      "wins": 4,
+      "losses": 1,
+      "draws": 15,
+      "penta_WW": 0,
+      "penta_WD": 4,
+      "penta_WL": 0,
+      "penta_DD": 5,
+      "penta_LD": 1,
+      "penta_LL": 0
+    },
+    "safety-only vs safety-capture": {
+      "wins": 0,
+      "losses": 1,
+      "draws": 19,
+      "penta_WW": 0,
+      "penta_WD": 0,
+      "penta_WL": 0,
+      "penta_DD": 9,
+      "penta_LD": 1,
+      "penta_LL": 0
+    }
+  }
+}

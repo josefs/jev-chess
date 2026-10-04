@@ -1,0 +1,106 @@
+{
+  "started": "2026-10-03T22:10:57",
+  "commit": "805c7ec (inferred from the run time)",
+  "engines": [
+    {
+      "name": "draw-instr-balance-mate",
+      "prompt": "prompts/draw-instr-balance-mate.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "mate-threat",
+      "prompt": "prompts/mate-threat.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "mate-exchange",
+      "prompt": "prompts/mate-exchange.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "mate-threat-exchange",
+      "prompt": "prompts/mate-threat-exchange.toml",
+      "random": false,
+      "temperature": 0.0
+    }
+  ],
+  "settings": {
+    "rounds": 10,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 12316917663588162501
+  },
+  "pairs": {
+    "mate-exchange vs mate-threat-exchange": {
+      "wins": 10,
+      "losses": 8,
+      "draws": 2,
+      "penta_WW": 1,
+      "penta_WD": 1,
+      "penta_WL": 7,
+      "penta_DD": 0,
+      "penta_LD": 1,
+      "penta_LL": 0
+    },
+    "draw-instr-balance-mate vs mate-threat-exchange": {
+      "wins": 4,
+      "losses": 9,
+      "draws": 7,
+      "penta_WW": 1,
+      "penta_WD": 2,
+      "penta_WL": 0,
+      "penta_DD": 1,
+      "penta_LD": 3,
+      "penta_LL": 3
+    },
+    "mate-threat vs mate-threat-exchange": {
+      "wins": 6,
+      "losses": 12,
+      "draws": 2,
+      "penta_WW": 1,
+      "penta_WD": 0,
+      "penta_WL": 4,
+      "penta_DD": 1,
+      "penta_LD": 0,
+      "penta_LL": 4
+    },
+    "mate-threat vs mate-exchange": {
+      "wins": 3,
+      "losses": 14,
+      "draws": 3,
+      "penta_WW": 0,
+      "penta_WD": 0,
+      "penta_WL": 3,
+      "penta_DD": 1,
+      "penta_LD": 1,
+      "penta_LL": 5
+    },
+    "draw-instr-balance-mate vs mate-exchange": {
+      "wins": 6,
+      "losses": 10,
+      "draws": 4,
+      "penta_WW": 1,
+      "penta_WD": 1,
+      "penta_WL": 3,
+      "penta_DD": 0,
+      "penta_LD": 3,
+      "penta_LL": 2
+    },
+    "draw-instr-balance-mate vs mate-threat": {
+      "wins": 10,
+      "losses": 8,
+      "draws": 2,
+      "penta_WW": 2,
+      "penta_WD": 2,
+      "penta_WL": 4,
+      "penta_DD": 0,
+      "penta_LD": 0,
+      "penta_LL": 2
+    }
+  }
+}
