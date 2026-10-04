@@ -3,7 +3,7 @@
 A chess bot that uses [Jev](https://typesafe.ai)
 (TypeSafe AI's "System One" decision model) to pick it's move.
 
-Unsurprisingly, jev-chess plays very poorly. It doesn't do any reasoning, it relies "System One" thinking in the words of typesafe.
+Unsurprisingly, jev-chess plays very poorly. It doesn't do any reasoning, it relies "System One" thinking in the words of typesafe. It's ELO is ~940, measured against maia 1100. The prompt given to jev definitely affects its strength and the prompt templates below is a trace of my attempts at optimizing it.
 
 Note that you will need an API Key from typesafe in order to use jev-chess.
 
