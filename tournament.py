@@ -315,6 +315,10 @@ def main():
         (out / "summary.txt").write_text(table)
         print(f"\n=== Final results ({out / 'summary.txt'}) ===\n{table}", end="")
     config_file = out / "config.json"
+    if config_file.is_file():
+        verdicts = head_to_head(json.loads(config_file.read_text()))
+        if verdicts:
+            print(f"\n=== Head to head ===\n{verdicts}", end="")
     if anchors and config_file.is_file():
         ratings = rating_report(json.loads(config_file.read_text()))
         (out / "ratings.txt").write_text(ratings)
@@ -347,6 +351,47 @@ def estimate(results):
             hi = mid
     info = sum(n * expected(lo, r) * (1 - expected(lo, r)) for r, _, n in results)
     return lo, 1.96 * 400 / math.log(10) / math.sqrt(info)
+
+
+def los(st):
+    """Likelihood of superiority of the first engine, from game-pair (pentanomial) results
+    as fastchess computes it, or None if every pair was drawn."""
+    counts = [st["penta_LL"], st["penta_LD"], st["penta_WL"] + st["penta_DD"],
+              st["penta_WD"], st["penta_WW"]]
+    pairs = sum(counts)
+    if not pairs:
+        return None
+    mean = sum(c * k / 2 for k, c in enumerate(counts)) / pairs
+    var = sum(c * (k / 2 - mean) ** 2 for k, c in enumerate(counts)) / pairs
+    if var == 0:
+        return None if mean == 1 else float(mean > 1)
+    return 0.5 * (1 + math.erf((mean - 1) / math.sqrt(2 * var / pairs)))
+
+
+def head_to_head(config):
+    """One plain-language line per pairing saying who won and how sure we can be."""
+    lines = []
+    for pair, st in config.get("stats", {}).items():
+        a, b = pair.split(" vs ")
+        w, l, d = st["wins"], st["losses"], st["draws"]
+        if w + l + d == 0:
+            continue
+        if l > w:
+            a, b, w, l = b, a, l, w
+        p = los(st)
+        if p is not None and st["wins"] < st["losses"]:
+            p = 1 - p
+        if p is not None:
+            p = round(p, 2) if p <= 0.99 else p
+        score = f"{w + d / 2:g}-{l + d / 2:g} (+{w} ={d} -{l})"
+        if w == l:
+            lines.append(f"{a} and {b} tied {score}.")
+            continue
+        sure = ("not conclusive" if p is None or p < 0.95 else "a clear result")
+        pct = ">99%" if p is not None and p > 0.99 else f"{p:.0%}" if p is not None else ""
+        chance = f"; {pct} likely to be the stronger engine" if pct else ""
+        lines.append(f"{a} beat {b} {score}{chance}: {sure}.")
+    return "\n".join(lines) + "\n" if lines else ""
 
 
 def rating_report(config):

@@ -169,6 +169,10 @@ Main options: `--rounds` (default 10), `--concurrency` (default 4), `--tc`
 `--seed`, `--model`/`--api-url` (Jev), `--openai-model`/`--openai-url` and
 `--out`. See `./tournament.py --help`.
 
+After the final table the script prints one line per pairing saying who won,
+the score, and how likely the winner is to be the stronger engine (fastchess's
+LOS). Below 95% the result is reported as not conclusive; play more rounds.
+
 Results go to `results/<timestamp>/`:
 
 - `summary.txt`: the final Elo table (fastchess also prints interim tables

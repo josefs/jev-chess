@@ -178,3 +178,17 @@ The 2.5/10 against Maia 1300 vs 1.5/10 against Maia 1100 is noise. Almost every
 loss was a mate after falling behind in material, usually already by move 20,
 so losing material in the middlegame, rather than blundering into mate, is now
 the main weakness.
+
+## 20261007-225114
+
+Engines: threat-loses, openai:threat-loses. Commit 8b3c0f5. Models: gpt-6-luna, jev-1.13.0.
+
+```
+Results of threat-loses vs openai:threat-loses (300+5, NULL, NULL, openings.epd):
+Elo: 34.86 +/- 66.06, nElo: 81.89 +/- 152.27
+LOS: 85.41 %, DrawRatio: 60.00 %, PairsRatio: 3.00
+Games: 20, Wins: 5, Losses: 3, Draws: 12, Points: 11.0 (55.00 %)
+Ptnml(0-2): [0, 1, 6, 3, 0], WL/DD Ratio: 0.50
+```
+
+Notes: TODO

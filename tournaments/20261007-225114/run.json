@@ -1,0 +1,45 @@
+{
+  "started": "2026-10-07T22:51:14",
+  "commit": "8b3c0f5",
+  "models": [
+    "gpt-6-luna",
+    "jev-1.13.0"
+  ],
+  "engines": [
+    {
+      "name": "threat-loses",
+      "provider": "jev",
+      "prompt": "prompts/threat-loses.toml",
+      "random": false,
+      "temperature": 0.0
+    },
+    {
+      "name": "openai:threat-loses",
+      "provider": "openai",
+      "prompt": "prompts/threat-loses.toml",
+      "random": false,
+      "temperature": 0.0
+    }
+  ],
+  "settings": {
+    "rounds": 10,
+    "games_per_opening": 2,
+    "time_control": "300+5",
+    "maxmoves": 150,
+    "openings": "openings.epd",
+    "seed": 13964218219058671283
+  },
+  "pairs": {
+    "threat-loses vs openai:threat-loses": {
+      "wins": 5,
+      "losses": 3,
+      "draws": 12,
+      "penta_WW": 0,
+      "penta_WD": 3,
+      "penta_WL": 2,
+      "penta_DD": 4,
+      "penta_LD": 1,
+      "penta_LL": 0
+    }
+  }
+}
