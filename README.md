@@ -14,21 +14,43 @@ Each setting can be given as a command-line flag or an environment variable
 
 | Flag        | Variable      | Default                                 | Description                     |
 | ----------- | ------------- | --------------------------------------- | ------------------------------- |
-| `--api-key` | `JEV_API_KEY` | (required)                              | Sent as a Bearer token          |
-| `--api-url` | `JEV_API_URL` | `https://api.typesafe.ai/v1/systemone`  | Decision endpoint               |
-| `--model`   | `JEV_MODEL`   | `jev-latest`                            | Jev model to use                |
-| `--log-file`| `JEV_CHESS_LOG` | (unset)                               | Append UCI traffic and Jev's top-ranked moves to this file |
+| `--provider`| `JEV_PROVIDER`| `jev`                                   | Decision API: `jev` or `openai` (see below) |
+| `--api-key` | `JEV_API_KEY` / `OPENAI_API_KEY` | (required)           | Sent as a Bearer token          |
+| `--api-url` | `JEV_API_URL` / `OPENAI_DECISIONS_URL` | the provider's endpoint | Decision endpoint     |
+| `--model`   | `JEV_MODEL` / `OPENAI_DECISIONS_MODEL` | `jev-latest` / `gpt-6-luna` | Model to use     |
+| `--log-file`| `JEV_CHESS_LOG` | (unset)                               | Append UCI traffic and the API's top-ranked moves to this file |
 | `--prompt`  | `JEV_PROMPT`  | built-in `prompts/threat-loses.toml`    | Prompt template file (see below) |
-| `--temperature` | `JEV_TEMPERATURE` | `0`                         | `0` plays Jev's most likely move; above 0, samples moves with weight p^(1/T) (`1` = Jev's own probabilities) |
+| `--temperature` | `JEV_TEMPERATURE` | `0`                         | `0` plays the most likely move; above 0, samples moves with weight p^(1/T) (`1` = the API's own probabilities) |
+
+The API key, URL and model variables are per provider: the jev provider only
+reads the `JEV_*` ones and the openai provider only the `OPENAI_*` ones, so a
+Jev key is never sent to OpenAI or vice versa (an explicit `--api-key` is used
+for whichever provider is selected).
 
 `jev-latest` is an alias that moves to each new Jev release. The log file
 records the versioned model that answered each move (e.g. `jev-1.13.0`), and
 tournaments record it in `run.json`. To compare against an older release, pass
 its versioned ID with `--model`.
 
+### OpenAI Decisions
+
+`--provider openai` sends the same state, instructions and options to OpenAI's
+[Decisions API](https://developers.openai.com/api/docs/guides/decisions)
+(`POST /v1/decisions`, currently in beta) as a single `choice` question, and
+plays the option with the highest returned probability:
+
+```sh
+export OPENAI_API_KEY=...
+./target/release/jev-chess --provider openai
+```
+
+If the model refuses to answer, the engine plays the first legal move, as it
+does for any API error. Prompt templates are shared between providers, but
+were tuned on Jev.
+
 Additional flags:
 
-- `--random` plays uniformly random legal moves without calling Jev (a
+- `--random` plays uniformly random legal moves without calling an API (a
   reference opponent for tournaments).
 - `--show-prompt [FEN|startpos [moves ...]]` prints the rendered state, instructions and
   options for a position and exits; handy when writing prompt variants.
@@ -39,9 +61,9 @@ command-line arguments are visible to other users via `ps`. If the GUI passes
 all arguments as one string, it is split on whitespace. Invalid arguments are
 reported on stderr but never stop the engine from speaking UCI.
 
-The same settings are also exposed as UCI options `ApiKey`, `ApiUrl` and
-`Model`, configurable from the GUI's engine options dialog. An empty option
-value falls back to the flag/environment setting.
+The same settings are also exposed as UCI options `Provider`, `ApiKey`,
+`ApiUrl` and `Model`, configurable from the GUI's engine options dialog. An
+empty option value falls back to the flag/environment setting.
 
 ## Usage
 
@@ -60,7 +82,7 @@ go
 ```
 
 Before `bestmove` the engine emits `info depth 1 score cp 0 pv <move>` (a
-neutral score; Jev doesn't evaluate positions) so that match runners such as
+neutral score; the APIs don't evaluate positions) so that match runners such as
 fastchess accept it.
 
 ## Prompt templates
@@ -130,9 +152,22 @@ Append `@T` to a prompt file to give that engine its own temperature, e.g.
 the rest. Sampling breaks repetition loops between deterministic engines and
 lets repeated openings play out differently.
 
+Prompt engines use Jev by default. Prefix a prompt file with `openai:` to
+play that engine through OpenAI's Decisions API instead (engine name
+`openai:<stem>`; needs `OPENAI_API_KEY`), e.g. to pit the two APIs against
+each other with the same prompt:
+
+```sh
+./tournament.py prompts/threat-loses.toml openai:prompts/threat-loses.toml
+```
+
+`--provider openai` makes OpenAI the default for unprefixed files, which with
+`--anchors` gives an OpenAI rating comparable to Jev's.
+
 Main options: `--rounds` (default 10), `--concurrency` (default 4), `--tc`
 (default `300+5`), `--maxmoves` (default 150, then adjudicated as a draw),
-`--seed`, `--model`, `--api-url` and `--out`. See `./tournament.py --help`.
+`--seed`, `--model`/`--api-url` (Jev), `--openai-model`/`--openai-url` and
+`--out`. See `./tournament.py --help`.
 
 Results go to `results/<timestamp>/`:
 

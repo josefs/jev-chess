@@ -4,10 +4,12 @@
 //! typed answers. We only use the `choice` question type, which returns a
 //! probability for each declared option.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
+
+use crate::backend::{Decision, post_json};
 
 pub const DEFAULT_URL: &str = "https://api.typesafe.ai/v1/systemone";
 pub const DEFAULT_MODEL: &str = "jev-latest";
@@ -50,26 +52,19 @@ struct Answer {
     probabilities: BTreeMap<String, f64>,
 }
 
-/// The result of a choice question.
-#[derive(Debug)]
-pub struct Decision {
-    pub choice: String,
-    /// The versioned model ID reported by the API, if any.
-    pub model: Option<String>,
-    pub probabilities: BTreeMap<String, f64>,
-}
-
 impl JevClient {
-    pub fn new(url: String, api_key: String, model: String) -> Result<Self> {
-        let http = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
-        Ok(Self {
+    pub fn new(
+        http: reqwest::blocking::Client,
+        url: String,
+        api_key: String,
+        model: String,
+    ) -> Self {
+        Self {
             http,
             url,
             api_key,
             model,
-        })
+        }
     }
 
     /// Asks Jev to pick one of `options` (key -> description) given `state`.
@@ -92,39 +87,12 @@ impl JevClient {
             )]),
         };
 
-        let response = self
-            .http
-            .post(&self.url)
-            .bearer_auth(&self.api_key)
-            .json(&request)
-            .send()
-            .context("request to Jev failed")?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().unwrap_or_default();
-            return Err(anyhow!("Jev returned {status}: {body}"));
-        }
-
+        let response = post_json(&self.http, &self.url, &self.api_key, &request, "Jev")?;
         let mut parsed: Response = response.json().context("invalid Jev response")?;
         let answer = parsed
             .answers
             .remove(QUESTION_KEY)
             .ok_or_else(|| anyhow!("Jev response has no '{QUESTION_KEY}' answer"))?;
-
-        let choice = answer
-            .probabilities
-            .iter()
-            .filter(|(k, _)| options.contains_key(*k))
-            .max_by(|a, b| a.1.total_cmp(b.1))
-            .map(|(k, _)| k.clone())
-            .or(answer.choice)
-            .filter(|c| options.contains_key(c))
-            .ok_or_else(|| anyhow!("Jev did not return a valid choice"))?;
-
-        Ok(Decision {
-            choice,
-            model: parsed.model,
-            probabilities: answer.probabilities,
-        })
+        Decision::new(options, answer.probabilities, answer.choice, parsed.model)
     }
 }

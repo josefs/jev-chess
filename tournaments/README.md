@@ -7,11 +7,11 @@ Every tournament run with `tournament.py`, oldest first. Each directory holds:
   each prompt engine.
 - `prompts/`: the exact prompt files that played.
 - `run.json`: engines, temperatures, settings, the commit the engine was built
-  from, the Jev model versions that answered, and per-pairing win/draw/loss
+  from, the API model versions that answered, and per-pairing win/draw/loss
   counts.
 - `games.pgn.gz`: every game (`gunzip -k` to read it).
 
-The per-engine logs with every prompt and Jev reply are left out because they
+The per-engine logs with every prompt and API reply are left out because they
 are large; they stay in `results/` (not committed).
 
 Jev version: runs up to and including 20261004-131810 used `jev-latest`, which

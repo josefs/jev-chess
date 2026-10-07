@@ -1,7 +1,10 @@
-//! jev-chess: a UCI chess engine that delegates move selection to Jev.
+//! jev-chess: a UCI chess engine that delegates move selection to a decision
+//! API (Jev by default, or OpenAI's Decisions API).
 
+mod backend;
 mod game;
 mod jev;
+mod openai;
 mod prompt;
 
 use std::{
@@ -14,33 +17,40 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+use backend::{Client, Provider};
 use clap::{Parser, error::ErrorKind};
 use game::Game;
-use jev::JevClient;
 use prompt::Prompt;
 
 const NAME: &str = concat!("jev-chess ", env!("CARGO_PKG_VERSION"));
 
-/// A UCI chess engine that lets Jev pick its moves.
+/// A UCI chess engine that lets a decision API (Jev or OpenAI) pick its moves.
 ///
-/// Each flag falls back to the corresponding environment variable. The same
-/// settings are also exposed as UCI options (ApiKey, ApiUrl, Model).
+/// Most flags fall back to an environment variable. The API settings are also
+/// exposed as UCI options (Provider, ApiKey, ApiUrl, Model).
 #[derive(Parser, Clone)]
 #[command(version)]
 struct Args {
-    /// Jev API key, sent as a Bearer token.
-    #[arg(long, env = "JEV_API_KEY", hide_env_values = true)]
+    /// Decision API that picks the moves.
+    #[arg(long, env = "JEV_PROVIDER", value_enum, default_value_t = Provider::Jev)]
+    provider: Provider,
+
+    /// API key, sent as a Bearer token. Defaults to the provider's own
+    /// variable: JEV_API_KEY for jev, OPENAI_API_KEY for openai.
+    #[arg(long)]
     api_key: Option<String>,
 
-    /// Jev decision endpoint.
-    #[arg(long, env = "JEV_API_URL", default_value = jev::DEFAULT_URL)]
-    api_url: String,
+    /// Decision endpoint. Defaults to JEV_API_URL / OPENAI_DECISIONS_URL, else
+    /// the provider's public endpoint.
+    #[arg(long)]
+    api_url: Option<String>,
 
-    /// Jev model to use.
-    #[arg(long, env = "JEV_MODEL", default_value = jev::DEFAULT_MODEL)]
-    model: String,
+    /// Model to use. Defaults to JEV_MODEL / OPENAI_DECISIONS_MODEL, else
+    /// jev-latest / gpt-6-luna.
+    #[arg(long)]
+    model: Option<String>,
 
-    /// Append a log of all UCI traffic and Jev decisions to this file.
+    /// Append a log of all UCI traffic and API decisions to this file.
     #[arg(long, env = "JEV_CHESS_LOG")]
     log_file: Option<PathBuf>,
 
@@ -48,17 +58,17 @@ struct Args {
     #[arg(long, env = "JEV_PROMPT")]
     prompt: Option<PathBuf>,
 
-    /// Sample Jev's move from its probabilities raised to 1/T instead of always
-    /// taking the most likely move. 0 = always the top move, 1 = sample in
-    /// proportion to Jev's probabilities.
+    /// Sample the move from the API's probabilities raised to 1/T instead of
+    /// always taking the most likely move. 0 = always the top move, 1 = sample
+    /// in proportion to the probabilities.
     #[arg(long, env = "JEV_TEMPERATURE", default_value_t = 0.0, value_parser = parse_temperature)]
     temperature: f64,
 
-    /// Ignore Jev and play uniformly random legal moves (a baseline opponent).
+    /// Ignore the API and play uniformly random legal moves (a baseline opponent).
     #[arg(long)]
     random: bool,
 
-    /// Print the Jev request for a position (UCI `position` syntax) and exit.
+    /// Print the API request for a position (UCI `position` syntax) and exit.
     #[arg(long, value_name = "POSITION", num_args = 0..=1, default_missing_value = "startpos")]
     show_prompt: Option<String>,
 }
@@ -106,10 +116,11 @@ fn parse_args() -> Args {
         }
         Err(e) => {
             warn(&format!("ignoring invalid arguments: {e}"));
-            Args::try_parse_from(&argv[..1]).unwrap_or_else(|_| Args {
+            Args::try_parse_from(&argv[..1]).unwrap_or(Args {
+                provider: Provider::Jev,
                 api_key: None,
-                api_url: jev::DEFAULT_URL.to_string(),
-                model: jev::DEFAULT_MODEL.to_string(),
+                api_url: None,
+                model: None,
                 log_file: None,
                 prompt: None,
                 temperature: 0.0,
@@ -124,6 +135,7 @@ fn parse_args() -> Args {
 /// An empty value falls back to the command-line/environment setting.
 #[derive(Default)]
 struct UciOptions {
+    provider: String,
     api_key: String,
     api_url: String,
     model: String,
@@ -141,6 +153,7 @@ impl UciOptions {
         };
         let value = if value == "<empty>" { "" } else { value };
         let slot = match name.to_ascii_lowercase().as_str() {
+            "provider" => &mut self.provider,
             "apikey" => &mut self.api_key,
             "apiurl" => &mut self.api_url,
             "model" => &mut self.model,
@@ -155,14 +168,33 @@ fn non_empty(s: &str) -> Option<String> {
     (!s.is_empty()).then(|| s.to_string())
 }
 
-fn build_client(args: &Args, opts: &UciOptions) -> Option<JevClient> {
-    let Some(key) = non_empty(&opts.api_key).or_else(|| args.api_key.clone()) else {
-        warn("no API key (--api-key / JEV_API_KEY / ApiKey option); playing the first legal move");
+fn build_client(args: &Args, opts: &UciOptions) -> Option<Client> {
+    let provider = match non_empty(&opts.provider) {
+        None => args.provider,
+        Some(name) => Provider::parse(&name).unwrap_or_else(|| {
+            warn(&format!(
+                "unknown Provider '{name}'; using {}",
+                args.provider.name()
+            ));
+            args.provider
+        }),
+    };
+    let explicit_key = non_empty(&opts.api_key).or_else(|| args.api_key.clone());
+    let Some(key) = provider.api_key(explicit_key) else {
+        warn(&format!(
+            "no {} API key (--api-key / {} / ApiKey option); playing the first legal move",
+            provider.name(),
+            provider.key_var()
+        ));
         return None;
     };
-    let url = non_empty(&opts.api_url).unwrap_or_else(|| args.api_url.clone());
-    let model = non_empty(&opts.model).unwrap_or_else(|| args.model.clone());
-    JevClient::new(url, key, model)
+    let url = provider.url(non_empty(&opts.api_url).or_else(|| args.api_url.clone()));
+    let model = provider.model(non_empty(&opts.model).or_else(|| args.model.clone()));
+    log(&format!(
+        "== using {} model {model} at {url}",
+        provider.name()
+    ));
+    Client::new(provider, url, key, model)
         .inspect_err(|e| warn(&format!("{e:#}; playing the first legal move")))
         .ok()
 }
@@ -174,7 +206,7 @@ fn load_prompt(args: &Args) -> anyhow::Result<Prompt> {
     }
 }
 
-/// Prints the request that would be sent to Jev for `position`.
+/// Prints the request that would be sent to the API for `position`.
 fn show_prompt(args: &Args, position: &str) -> ExitCode {
     let result = load_prompt(args).and_then(|prompt| {
         let position = position.trim();
@@ -221,7 +253,7 @@ fn main() -> ExitCode {
     }
     let mut opts = UciOptions::default();
     // Built lazily so that `setoption` commands sent after startup take effect.
-    let mut client: Option<Option<JevClient>> = None;
+    let mut client: Option<Option<Client>> = None;
     let mut rng = RandomState::new().build_hasher();
 
     let stdin = io::stdin();
@@ -245,6 +277,10 @@ fn main() -> ExitCode {
             "uci" => {
                 send(&mut out, &format!("id name {NAME}"));
                 send(&mut out, "id author josefs");
+                send(
+                    &mut out,
+                    "option name Provider type combo default <empty> var <empty> var jev var openai",
+                );
                 send(&mut out, "option name ApiKey type string default <empty>");
                 send(&mut out, "option name ApiUrl type string default <empty>");
                 send(&mut out, "option name Model type string default <empty>");
@@ -275,7 +311,7 @@ fn main() -> ExitCode {
                         &mut out,
                     )
                 };
-                // Match runners such as fastchess expect a scored info line; Jev gives
+                // Match runners such as fastchess expect a scored info line; the API gives
                 // no evaluation, so report a neutral score.
                 send(&mut out, &format!("info depth 1 score cp 0 pv {mv}"));
                 send(&mut out, &format!("bestmove {mv}"));
@@ -336,7 +372,7 @@ fn sample<'a>(
 
 fn choose_move(
     game: &Game,
-    client: Option<&JevClient>,
+    client: Option<&Client>,
     prompt: &Prompt,
     temperature: f64,
     rng: &mut impl Hasher,
@@ -355,13 +391,14 @@ fn choose_move(
     let Some(client) = client else {
         send(
             out,
-            &format!("info string no Jev client; playing {fallback}"),
+            &format!("info string no API client; playing {fallback}"),
         );
         return fallback;
     };
 
     let options = game.options(&moves, prompt);
     let vars = game.state_vars();
+    let api = client.provider().name();
     match client.choose(&prompt.state(&vars), &prompt.instructions(&vars), &options) {
         Ok(decision) => {
             let mut ranked: Vec<_> = decision.probabilities.iter().collect();
@@ -372,7 +409,7 @@ fn choose_move(
                 .map(|(m, p)| format!("{m}={p:.3}"))
                 .collect();
             let model = decision.model.as_deref().unwrap_or("unknown model");
-            log(&format!("   jev ({model}) top moves: {}", top.join(" ")));
+            log(&format!("   {api} ({model}) top moves: {}", top.join(" ")));
             let valid = decision
                 .probabilities
                 .iter()
@@ -383,13 +420,13 @@ fn choose_move(
                 None => (decision.choice.clone(), "chose"),
             };
             let p = decision.probabilities.get(&choice).copied().unwrap_or(0.0);
-            send(out, &format!("info string jev {how} {choice} (p={p:.3})"));
+            send(out, &format!("info string {api} {how} {choice} (p={p:.3})"));
             choice
         }
         Err(e) => {
             send(
                 out,
-                &format!("info string jev error: {e:#}; playing {fallback}"),
+                &format!("info string {api} error: {e:#}; playing {fallback}"),
             );
             fallback
         }
@@ -423,6 +460,8 @@ mod tests {
     #[test]
     fn setoption_parsing() {
         let mut o = UciOptions::default();
+        assert!(o.set("name Provider value openai"));
+        assert_eq!(Provider::parse(&o.provider), Some(Provider::Openai));
         assert!(o.set("name ApiKey value sk-1"));
         assert!(o.set("name Model value jev latest"));
         assert!(o.set("name ApiUrl value <empty>"));

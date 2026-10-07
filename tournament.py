@@ -11,6 +11,7 @@ Examples:
     ./tournament.py prompts/a.toml prompts/a.toml@0.5 prompts/b.toml --temperature 0.3
     ./tournament.py --archive results/20261003-223135
     ./tournament.py prompts/threat-loses.toml --anchors maia1100,maia1300,maia1500,sf1320
+    ./tournament.py prompts/threat-loses.toml openai:prompts/threat-loses.toml
 
 With --anchors, the prompt engines instead play a gauntlet against engines of
 known strength (Stockfish limited with UCI_Elo, or the human-like Maia networks
@@ -21,8 +22,11 @@ A finished tournament is also archived to tournaments/<timestamp>/ (final table,
 prompt files, settings, commit and compressed PGN, but not the large per-engine
 logs) and listed in tournaments/README.md, so the record can be committed.
 
-The Jev API key is taken from JEV_API_KEY (or --api-key) and passed to the
-engines through the environment, so it never appears in logs or PGNs.
+Engines use Jev unless --provider says otherwise; prefix a prompt file with
+"jev:" or "openai:" to pick the API for that engine alone (OpenAI engines are
+named "openai:<prompt>"). API keys are taken from JEV_API_KEY / OPENAI_API_KEY
+(or --api-key / --openai-api-key) and passed to the engines through the
+environment, so they never appear in logs or PGNs.
 """
 
 import argparse
@@ -48,6 +52,7 @@ MAIA_LEVELS = range(1100, 2000, 100)
 # Stockfish's UCI_Elo is calibrated against CCRL Blitz (2'+1"), so anchors play at that.
 STOCKFISH_TC = "120+1"
 ANCHOR = re.compile(r"^(sf|maia)(\d+)$")
+PROVIDERS = {"jev": "JEV_API_KEY", "openai": "OPENAI_API_KEY"}
 SCALES = {"sf": "Stockfish UCI_Elo (CCRL Blitz)", "maia": "Maia (Lichess)"}
 FASTCHESS_VERSION = "v1.8.2-alpha"
 FASTCHESS_ASSETS = {
@@ -156,7 +161,8 @@ def main():
     )
     p.add_argument("prompts", nargs="*",
                    help="prompt files; one engine each. Append @T to set that engine's "
-                        "temperature, e.g. prompts/bare.toml@0.5")
+                        "temperature, e.g. prompts/bare.toml@0.5, and prefix jev: or openai: "
+                        "to choose its API, e.g. openai:prompts/bare.toml")
     p.add_argument("--random", action="store_true",
                    help="add an engine that plays random legal moves, as a reference")
     p.add_argument("--rounds", type=int, default=10,
@@ -171,10 +177,15 @@ def main():
     p.add_argument("--out", type=Path, help="results directory (default results/<timestamp>)")
     p.add_argument("--temperature", type=float, default=0.0,
                    help="sampling temperature for engines without @T (default 0: always "
-                        "play Jev's top move)")
+                        "play the API's top move)")
+    p.add_argument("--provider", choices=PROVIDERS, default="jev",
+                   help="API for prompt files without a jev:/openai: prefix (default jev)")
     p.add_argument("--api-key", help="Jev API key (default: $JEV_API_KEY)")
-    p.add_argument("--model", help="Jev model for all engines")
-    p.add_argument("--api-url", help="Jev endpoint for all engines")
+    p.add_argument("--model", help="Jev model for all Jev engines")
+    p.add_argument("--api-url", help="Jev endpoint for all Jev engines")
+    p.add_argument("--openai-api-key", help="OpenAI API key (default: $OPENAI_API_KEY)")
+    p.add_argument("--openai-model", help="OpenAI Decisions model for all OpenAI engines")
+    p.add_argument("--openai-url", help="OpenAI Decisions endpoint for all OpenAI engines")
     p.add_argument("--fastchess", help="path to a fastchess binary (default: download it)")
     p.add_argument("--no-build", action="store_true", help="don't run cargo build first")
     p.add_argument("--anchors", type=lambda v: [a for a in v.split(",") if a], default=[],
@@ -195,8 +206,12 @@ def main():
 
     engines = []  # (name, engine args)
     prompts = []
+    providers = set()
     for spec in args.prompts:
-        path, at, temp = spec.rpartition("@") if "@" in spec else (spec, "", "")
+        provider, colon, rest = spec.partition(":")
+        if not colon or provider not in PROVIDERS:
+            provider, rest = args.provider, spec
+        path, at, temp = rest.rpartition("@") if "@" in rest else (rest, "", "")
         prompt = Path(path)
         if not prompt.is_file():
             die(f"{prompt} is not a file")
@@ -206,9 +221,10 @@ def main():
             die(f"invalid temperature in {spec}")
         if temperature < 0:
             die(f"temperature must be non-negative: {spec}")
-        name = prompt.stem + (f"@{temp}" if at else "")
+        name = ("" if provider == "jev" else f"{provider}:") + prompt.stem + (f"@{temp}" if at else "")
         prompts.append(prompt)
-        engines.append((name, ["--prompt", str(prompt.resolve()),
+        providers.add(provider)
+        engines.append((name, ["--provider", provider, "--prompt", str(prompt.resolve()),
                                "--temperature", str(temperature)]))
     if args.random:
         engines.append(("random", ["--random"]))
@@ -219,19 +235,21 @@ def main():
     if len(names) < 2:
         die("need at least two engines (give two prompt files, or one plus --random or --anchors)")
     if len(set(names)) != len(names):
-        die(f"engine names must be unique (they come from the file names and @T): {names}")
+        die(f"engine names must be unique (they come from the provider, file name and @T): {names}")
 
     env = dict(os.environ)
-    if args.api_key:
-        env["JEV_API_KEY"] = args.api_key
-    for flag, var in [(args.model, "JEV_MODEL"), (args.api_url, "JEV_API_URL")]:
+    for flag, var in [(args.api_key, "JEV_API_KEY"), (args.model, "JEV_MODEL"),
+                      (args.api_url, "JEV_API_URL"), (args.openai_api_key, "OPENAI_API_KEY"),
+                      (args.openai_model, "OPENAI_DECISIONS_MODEL"),
+                      (args.openai_url, "OPENAI_DECISIONS_URL")]:
         if flag:
             env[var] = flag
-    env.pop("JEV_CHESS_LOG", None)
-    env.pop("JEV_PROMPT", None)
-    env.pop("JEV_TEMPERATURE", None)
-    if prompts and not env.get("JEV_API_KEY"):
-        die("set JEV_API_KEY or pass --api-key")
+    for var in ["JEV_CHESS_LOG", "JEV_PROMPT", "JEV_TEMPERATURE", "JEV_PROVIDER"]:
+        env.pop(var, None)
+    for provider in sorted(providers):
+        if not env.get(PROVIDERS[provider]):
+            flag = "--api-key" if provider == "jev" else "--openai-api-key"
+            die(f"set {PROVIDERS[provider]} or pass {flag}")
 
     binary = build_engine(args.no_build)
     for prompt in prompts:
@@ -265,7 +283,7 @@ def main():
     if args.seed is not None:
         cmd += ["-srand", str(args.seed)]
     for name, engine_args in engines:
-        engine_args = engine_args + ["--log-file", str(out / f"{name}.log")]
+        engine_args = engine_args + ["--log-file", str(out / f"{log_name(name)}.log")]
         cmd += ["-engine", f"name={name}", f"cmd={binary}", f"tc={args.tc}",
                 f"args={' '.join(engine_args)}"]
     for anchor in anchors:
@@ -352,13 +370,18 @@ def rating_report(config):
     return "\n".join(lines) + "\n" if lines else ""
 
 
-def jev_models(run):
-    """Returns the versioned Jev model IDs that answered, from the engine logs."""
+def log_name(engine):
+    return engine.replace(":", "_")
+
+
+def api_models(run):
+    """Returns the versioned model IDs that answered, from the engine logs."""
     found = set()
     for log in run.glob("*.log"):
         with open(log, errors="replace") as f:
             for line in f:
-                if m := re.search(r"jev \(([^)]+)\) top moves", line):
+                m = re.search(r"(?:jev|openai) \(([^)]+)\) top moves", line)
+                if m and m[1] != "unknown model":
                     found.add(m[1])
     return sorted(found)
 
@@ -432,16 +455,17 @@ def archive(run):
         prompt = opt("--prompt")
         engines.append({
             "name": e["name"],
+            "provider": None if "--random" in words else opt("--provider") or "jev",
             "prompt": f"prompts/{Path(prompt).name}" if prompt else None,
             "random": "--random" in words,
             "temperature": float(opt("--temperature")) if opt("--temperature") else None,
         })
     tc = config["engines"][0]["limit"]["tc"]
-    models = jev_models(run)
+    models = api_models(run)
     run_info = {
         "started": started.isoformat(timespec="seconds"),
         "commit": commit,
-        "jev_models": models,
+        "models": models,
         "engines": engines,
         "settings": {
             "rounds": config["rounds"],
@@ -469,7 +493,7 @@ def archive(run):
         rows = "".join(l for l in table.splitlines(keepends=True) if not re.match(r"^-+$", l.strip()))
         index.write_text(text.rstrip("\n") + f"\n\n{heading}\n\n"
                          f"Engines: {names}. Commit {commit}. "
-                         f"Jev: {', '.join(models) or 'version not recorded'}.\n\n"
+                         f"Models: {', '.join(models) or 'not recorded'}.\n\n"
                          f"```\n{rows.strip(chr(10))}\n```\n\n"
                          + (f"Estimated ratings:\n\n```\n{ratings}```\n\n" if ratings else "") +
                          f"Notes: TODO\n")
@@ -485,11 +509,11 @@ Every tournament run with `tournament.py`, oldest first. Each directory holds:
   each prompt engine.
 - `prompts/`: the exact prompt files that played.
 - `run.json`: engines, temperatures, settings, the commit the engine was built
-  from, the Jev model versions that answered, and per-pairing win/draw/loss
+  from, the API model versions that answered, and per-pairing win/draw/loss
   counts.
 - `games.pgn.gz`: every game (`gunzip -k` to read it).
 
-The per-engine logs with every prompt and Jev reply are left out because they
+The per-engine logs with every prompt and API reply are left out because they
 are large; they stay in `results/` (not committed).
 """
 
