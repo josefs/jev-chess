@@ -191,4 +191,29 @@ Games: 20, Wins: 5, Losses: 3, Draws: 12, Points: 11.0 (55.00 %)
 Ptnml(0-2): [0, 1, 6, 3, 0], WL/DD Ratio: 0.50
 ```
 
-Notes: TODO
+Notes: First Jev vs OpenAI Decisions (gpt-6-luna) match, same prompt
+(threat-loses, tuned on Jev). Jev ahead 11-9 but inconclusive (LOS 85%);
+continued as an SPRT in the next run. OpenAI refused 4 moves (the engine then
+plays its first legal move).
+
+## 20261007-230830
+
+Engines: threat-loses, openai:threat-loses. Commit 1968e94. Models: gpt-6-luna, jev-1.13.0.
+
+```
+Results of threat-loses vs openai:threat-loses (300+5, NULL, NULL, openings.epd):
+Elo: 77.71 +/- 51.18, nElo: 107.75 +/- 68.10
+LOS: 99.90 %, DrawRatio: 28.00 %, PairsRatio: 2.27
+Games: 100, Wins: 37, Losses: 15, Draws: 48, Points: 61.0 (61.00 %)
+Ptnml(0-2): [0, 11, 14, 17, 8], WL/DD Ratio: 0.40
+LLR: 3.09 (104.9%) (-2.94, 2.94) [0.00, 30.00]
+```
+
+Notes: SPRT [0, 30] between Jev and OpenAI Decisions (gpt-6-luna), same
+prompt. H1 accepted after 100 games: Jev is the stronger move picker, about
++78 +/- 51 Elo (61%), with 52 decisive games, mostly by mate.
+OpenAI was faster per call (median 0.14 s vs 0.25 s) but had
+26 failures in ~10,400 calls (24 refusals, 2 x 503 "Decision inference is
+unavailable"), each replaced by the first legal move; too few to explain the
+gap. Caveat: the prompt was optimised for Jev, so this compares the models on
+Jev's home ground.

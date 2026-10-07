@@ -1,0 +1,8 @@
+--------------------------------------------------
+Results of threat-loses vs openai:threat-loses (300+5, NULL, NULL, openings.epd):
+Elo: 77.71 +/- 51.18, nElo: 107.75 +/- 68.10
+LOS: 99.90 %, DrawRatio: 28.00 %, PairsRatio: 2.27
+Games: 100, Wins: 37, Losses: 15, Draws: 48, Points: 61.0 (61.00 %)
+Ptnml(0-2): [0, 11, 14, 17, 8], WL/DD Ratio: 0.40
+LLR: 3.09 (104.9%) (-2.94, 2.94) [0.00, 30.00]
+--------------------------------------------------
