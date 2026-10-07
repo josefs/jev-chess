@@ -12,6 +12,7 @@ Examples:
     ./tournament.py --archive results/20261003-223135
     ./tournament.py prompts/threat-loses.toml --anchors maia1100,maia1300,maia1500,sf1320
     ./tournament.py prompts/threat-loses.toml openai:prompts/threat-loses.toml
+    ./tournament.py prompts/threat-loses.toml openai:prompts/threat-loses.toml --sprt
 
 With --anchors, the prompt engines instead play a gauntlet against engines of
 known strength (Stockfish limited with UCI_Elo, or the human-like Maia networks
@@ -165,8 +166,15 @@ def main():
                         "to choose its API, e.g. openai:prompts/bare.toml")
     p.add_argument("--random", action="store_true",
                    help="add an engine that plays random legal moves, as a reference")
-    p.add_argument("--rounds", type=int, default=10,
-                   help="openings per pairing; each is played twice with colours swapped (default 10)")
+    p.add_argument("--rounds", type=int,
+                   help="openings per pairing; each is played twice with colours swapped "
+                        "(default 10, or at most 250 with --sprt)")
+    p.add_argument("--sprt", nargs="?", const="0,30", metavar="ELO0,ELO1",
+                   help="between exactly two engines, play until a sequential probability "
+                        "ratio test decides whether the first engine is at least ELO1 "
+                        "stronger (H1) or at most ELO0 (H0), in logistic Elo (default 0,30)")
+    p.add_argument("--sprt-error", type=float, default=0.05,
+                   help="false positive and false negative rate for --sprt (default 0.05)")
     p.add_argument("--concurrency", type=int, default=4, help="games played in parallel (default 4)")
     p.add_argument("--tc", default="300+5",
                    help="time control per game, seconds+increment (default 300+5)")
@@ -237,6 +245,22 @@ def main():
     if len(set(names)) != len(names):
         die(f"engine names must be unique (they come from the provider, file name and @T): {names}")
 
+    sprt = None
+    if args.sprt:
+        try:
+            elo0, elo1 = (float(x) for x in args.sprt.split(","))
+        except ValueError:
+            die(f"--sprt expects ELO0,ELO1, e.g. 0,30: {args.sprt}")
+        if elo1 <= elo0:
+            die("--sprt needs ELO0 < ELO1")
+        if len(names) != 2 or anchors:
+            die("--sprt compares exactly two engines (and no --anchors)")
+        if not 0 < args.sprt_error < 0.5:
+            die("--sprt-error must be between 0 and 0.5")
+        sprt = ["-sprt", f"elo0={elo0:g}", f"elo1={elo1:g}", f"alpha={args.sprt_error:g}",
+                f"beta={args.sprt_error:g}", "model=logistic"]
+    rounds = args.rounds or (250 if sprt else 10)
+
     env = dict(os.environ)
     for flag, var in [(args.api_key, "JEV_API_KEY"), (args.model, "JEV_MODEL"),
                       (args.api_url, "JEV_API_URL"), (args.openai_api_key, "OPENAI_API_KEY"),
@@ -270,7 +294,8 @@ def main():
         str(fastchess),
         *(["-tournament", "gauntlet", "-seeds", str(len(engines))] if anchors
           else ["-tournament", "roundrobin"]),
-        "-rounds", str(args.rounds),
+        "-rounds", str(rounds),
+        *(sprt or []),
         "-repeat",
         "-concurrency", str(args.concurrency),
         "-openings", f"file={args.openings.resolve()}", "format=epd", "order=random",
@@ -316,7 +341,8 @@ def main():
         print(f"\n=== Final results ({out / 'summary.txt'}) ===\n{table}", end="")
     config_file = out / "config.json"
     if config_file.is_file():
-        verdicts = head_to_head(json.loads(config_file.read_text()))
+        config = json.loads(config_file.read_text())
+        verdicts = head_to_head(config) + sprt_verdict(config, lines)
         if verdicts:
             print(f"\n=== Head to head ===\n{verdicts}", end="")
     if anchors and config_file.is_file():
@@ -392,6 +418,22 @@ def head_to_head(config):
         chance = f"; {pct} likely to be the stronger engine" if pct else ""
         lines.append(f"{a} beat {b} {score}{chance}: {sure}.")
     return "\n".join(lines) + "\n" if lines else ""
+
+
+def sprt_verdict(config, lines):
+    """Explains the SPRT outcome, if the run was an SPRT."""
+    sprt = config.get("sprt", {})
+    if not sprt.get("enabled"):
+        return ""
+    a, b = next(iter(config["stats"])).split(" vs ")
+    elo0, elo1 = f"{sprt['elo0']:g}", f"{sprt['elo1']:g}"
+    text = "".join(lines)
+    if "H1 was accepted" in text:
+        return f"SPRT: {a} is at least {elo1} Elo stronger than {b} (H1 accepted).\n"
+    if "H0 was accepted" in text:
+        return (f"SPRT: {a} is not {elo1} Elo stronger than {b} (H0 accepted: the gap is "
+                f"closer to {elo0} than to {elo1} Elo).\n")
+    return f"SPRT: undecided; ran out of rounds before choosing between {elo0} and {elo1} Elo.\n"
 
 
 def rating_report(config):
@@ -519,6 +561,8 @@ def archive(run):
             "maxmoves": config["maxmoves"]["move_count"] if config["maxmoves"]["enabled"] else None,
             "openings": Path(config["opening"]["file"]).name,
             "seed": config["seed"],
+            "sprt": ({k: config["sprt"][k] for k in ["elo0", "elo1", "alpha", "beta", "model"]}
+                     if config.get("sprt", {}).get("enabled") else None),
         },
         "pairs": config.get("stats", {}),
     }

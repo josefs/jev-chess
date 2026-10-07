@@ -173,6 +173,22 @@ After the final table the script prints one line per pairing saying who won,
 the score, and how likely the winner is to be the stronger engine (fastchess's
 LOS). Below 95% the result is reported as not conclusive; play more rounds.
 
+To find out whether one engine is really stronger than another without fixing
+the number of games up front, use `--sprt` with exactly two engines:
+
+```sh
+./tournament.py prompts/threat-loses.toml openai:prompts/threat-loses.toml --sprt
+```
+
+This runs fastchess's sequential probability ratio test: it keeps playing until
+it can decide, with 5% error rates (`--sprt-error`), between "the first engine is
+at least 30 Elo stronger" (H1) and "it is not" (H0: the gap is closer to 0
+than to 30 Elo), then stops. Change
+the bounds with `--sprt ELO0,ELO1` (logistic Elo, e.g. `--sprt 0,50` decides
+sooner but only detects bigger gaps). `--rounds` caps the test (default 250
+rounds, 500 games); if the engines are between the bounds it may hit that cap
+undecided.
+
 Results go to `results/<timestamp>/`:
 
 - `summary.txt`: the final Elo table (fastchess also prints interim tables
